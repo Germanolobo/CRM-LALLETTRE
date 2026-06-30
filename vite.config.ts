@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-    base: '/CRM/', // <-- LINHA ADICIONADA AQUI
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
