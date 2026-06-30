@@ -3,6 +3,7 @@ import { collection, getDocs, query, where, limit, addDoc } from 'firebase/fires
 import { db } from '../firebase';
 import { User } from '../types';
 import { Sparkles, Loader2, Lock, Mail, Eye, EyeOff, KeyRound } from 'lucide-react';
+import Logo from './Logo';
 
 interface LoginProps {
   onLoginSuccess: (user: User) => void;
@@ -154,15 +155,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       <div className="w-full max-w-md bg-[#0A0A0A] border border-white/5 rounded-2xl p-8 shadow-2xl relative z-10 glass transition-all duration-500">
         {/* Brand Header */}
         <div className="text-center mb-8 flex flex-col items-center">
-          <div className="relative inline-block select-none w-52" id="login-brand-logo">
-            <div className="absolute inset-0 bg-[#DFBA73]/5 blur-lg rounded-full pointer-events-none"></div>
-            <img
-              src="/logo.svg"
-              alt="Lallettre"
-              className="h-16 w-auto object-contain relative z-10 mx-auto"
-              referrerPolicy="no-referrer"
-            />
-          </div>
+          <Logo variant="login" />
           <p className="font-italiana text-[10px] tracking-[0.25em] text-[#DFBA73]/70 uppercase mt-3">
             Maison de Parfum • CRM
           </p>

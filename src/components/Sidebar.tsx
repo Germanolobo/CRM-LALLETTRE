@@ -13,6 +13,7 @@ import {
   User
 } from 'lucide-react';
 import { Product, User as UserType } from '../types';
+import Logo from './Logo';
 
 interface SidebarProps {
   currentTab: string;
@@ -49,16 +50,8 @@ export default function Sidebar({ currentTab, setCurrentTab, products, currentUs
     <div className="w-[220px] shrink-0 bg-[#0A0A0A] border-r border-terracotta-500/20 flex flex-col h-screen sticky top-0" id="sidebar">
       {/* Brand Header */}
       <div className="p-6 mb-4 flex flex-col justify-start border-b border-white/5 pb-5" id="sidebar-brand-header">
-        <div className="relative inline-block select-none w-36" id="sidebar-brand-logo">
-          <div className="absolute inset-0 bg-[#DFBA73]/5 blur-md rounded-full pointer-events-none"></div>
-          <img
-            src="/logo.svg"
-            alt="Lallettre"
-            className="h-12 w-auto object-contain relative z-10"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-        <p className="font-italiana text-[9px] tracking-[0.22em] text-[#DFBA73]/70 uppercase mt-1">
+        <Logo variant="sidebar" className="self-start" />
+        <p className="font-italiana text-[9px] tracking-[0.22em] text-[#DFBA73]/70 uppercase mt-2 self-start pl-1">
           Maison de Parfum
         </p>
       </div>
