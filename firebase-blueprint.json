@@ -1,0 +1,103 @@
+{
+  "entities": {
+    "product": {
+      "title": "Product",
+      "description": "Lalletre perfume variant and stock level",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "size": { "type": "string" },
+        "stock": { "type": "number" },
+        "price": { "type": "number" },
+        "description": { "type": "string" },
+        "sku": { "type": "string" }
+      },
+      "required": ["name", "size", "stock", "price"]
+    },
+    "lead": {
+      "title": "Lead",
+      "description": "Potential or won customer for Lalletre",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string" },
+        "interestSize": { "type": "string" },
+        "notes": { "type": "string" },
+        "source": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "totalSpent": { "type": "number" }
+      },
+      "required": ["name", "status"]
+    },
+    "sale": {
+      "title": "Sale",
+      "description": "Completed order for a Lalletre perfume",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "totalPrice": { "type": "number" },
+        "date": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["clientId", "productId", "quantity", "totalPrice", "date"]
+    },
+    "interaction": {
+      "title": "Interaction",
+      "description": "Interaction log with a client/lead",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "type": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["clientId", "type", "content", "date"]
+    },
+    "funnel_setting": {
+      "title": "FunnelSetting",
+      "description": "Funnel stages configurations",
+      "type": "object",
+      "properties": {
+        "stages": {
+          "type": "array",
+          "description": "Customizable pipeline stages"
+        }
+      },
+      "required": ["stages"]
+    }
+  },
+  "firestore": {
+    "products/{productId}": {
+      "schema": "product",
+      "description": "Perfume products inventory"
+    },
+    "leads/{leadId}": {
+      "schema": "lead",
+      "description": "Clients and leads registry"
+    },
+    "sales/{saleId}": {
+      "schema": "sale",
+      "description": "Sales records"
+    },
+    "interactions/{interactionId}": {
+      "schema": "interaction",
+      "description": "Interaction records with clients"
+    },
+    "settings/funnel": {
+      "schema": "funnel_setting",
+      "description": "Global settings for sales funnel stages"
+    }
+  }
+}

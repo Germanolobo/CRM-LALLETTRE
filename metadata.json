@@ -1,0 +1,6 @@
+{
+  "name": "Lalletre CRM",
+  "description": "CRM de perfumaria centralizado com controle de estoque integrado para gerenciar leads e vendas do perfume Lalletre.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
