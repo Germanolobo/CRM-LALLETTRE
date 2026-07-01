@@ -9,6 +9,7 @@ import { db, seedInitialDataIfEmpty, ensureAdminUserExists } from './firebase';
 import { Lead, Product, Sale, Interaction, LeadStatus, User } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
+import PDVManager from './components/PDVManager';
 import LeadsManager from './components/LeadsManager';
 import StockManager from './components/StockManager';
 import SalesManager from './components/SalesManager';
@@ -71,7 +72,7 @@ export default function App() {
         setCurrentTab('dashboard');
       }
     } else if (role === 'Apenas Estoque') {
-      const allowed = ['dashboard', 'stock', 'sales', 'profile'];
+      const allowed = ['dashboard', 'pdv', 'stock', 'sales', 'profile'];
       if (!allowed.includes(currentTab)) {
         setCurrentTab('dashboard');
       }
@@ -394,6 +395,15 @@ export default function App() {
                 onQuickAddLead={handleQuickAddLead}
                 onQuickAddSale={handleQuickAddSale}
                 funnelStages={funnelStages}
+              />
+            )}
+
+            {currentTab === 'pdv' && (
+              <PDVManager 
+                products={products}
+                leads={leads}
+                onAddSale={handleAddSale}
+                onAddLead={handleAddLead}
               />
             )}
 

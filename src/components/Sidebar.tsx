@@ -10,7 +10,8 @@ import {
   AlertTriangle,
   UserCheck,
   ShieldAlert,
-  User
+  User,
+  Store
 } from 'lucide-react';
 import { Product, User as UserType } from '../types';
 import Logo from './Logo';
@@ -33,6 +34,7 @@ export default function Sidebar({ currentTab, setCurrentTab, products, currentUs
 
     const allItems = [
       { id: 'dashboard', name: 'Painel Geral', icon: LayoutDashboard, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque'] },
+      { id: 'pdv', name: 'PDV (Frente de Loja)', icon: Store, roles: ['Acesso Total', 'Apenas Estoque'] },
       { id: 'leads', name: 'Leads & Clientes', icon: Users, roles: ['Acesso Total', 'Apenas Leads'] },
       { id: 'stock', name: 'Controle de Estoque', icon: Package, roles: ['Acesso Total', 'Apenas Estoque'] },
       { id: 'sales', name: 'Registro de Vendas', icon: BadgePercent, roles: ['Acesso Total', 'Apenas Estoque'] },
