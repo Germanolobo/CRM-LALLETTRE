@@ -327,9 +327,18 @@ export default function TeamManager({ currentUser }: TeamManagerProps) {
                     <tr key={user.id} className="hover:bg-white/[0.01] transition-all">
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-terracotta-900/40 border border-terracotta-500/20 flex items-center justify-center font-bold text-xs text-[#B35B48]">
-                            {user.name.substring(0, 2).toUpperCase()}
-                          </div>
+                          {user.photoUrl ? (
+                            <img 
+                              src={user.photoUrl} 
+                              alt={user.name} 
+                              className="h-8 w-8 rounded-full object-cover border border-terracotta-500/20 shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-terracotta-900/40 border border-terracotta-500/20 flex items-center justify-center font-bold text-xs text-[#B35B48] shrink-0">
+                              {user.name.substring(0, 2).toUpperCase()}
+                            </div>
+                          )}
                           <div>
                             <p className="font-medium text-white flex items-center gap-1.5">
                               {user.name}

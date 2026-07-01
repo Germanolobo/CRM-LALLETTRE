@@ -53,5 +53,6 @@ export interface User {
   role: 'Acesso Total' | 'Apenas Leads' | 'Apenas Estoque';
   invitedBy?: string;
   createdAt: string;
+  photoUrl?: string;
 }
 

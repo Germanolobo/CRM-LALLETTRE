@@ -116,9 +116,18 @@ export default function Sidebar({ currentTab, setCurrentTab, products, currentUs
       {currentUser && (
         <div className="p-4 border-t border-white/5 bg-brand-black/20 flex flex-col gap-2.5">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="h-8 w-8 rounded-full bg-[#B35B48] flex items-center justify-center font-bold text-xs text-white shrink-0">
-              {currentUser.name.substring(0, 2).toUpperCase()}
-            </div>
+            {currentUser.photoUrl ? (
+              <img 
+                src={currentUser.photoUrl} 
+                alt={currentUser.name} 
+                className="h-8 w-8 rounded-full object-cover border border-[#B35B48]/30 shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-[#B35B48] flex items-center justify-center font-bold text-xs text-white shrink-0">
+                {currentUser.name.substring(0, 2).toUpperCase()}
+              </div>
+            )}
             <div className="flex flex-col overflow-hidden">
               <span className="text-xs font-bold text-white truncate" title={currentUser.name}>{currentUser.name}</span>
               <span className="text-[9px] text-[#B35B48] font-mono leading-tight">{currentUser.role}</span>

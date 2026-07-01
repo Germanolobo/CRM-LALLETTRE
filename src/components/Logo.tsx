@@ -6,16 +6,17 @@ interface LogoProps {
 }
 
 export default function Logo({ className = '', variant = 'sidebar' }: LogoProps) {
-  const [imgSrc, setImgSrc] = useState('/logo.png');
+  const baseUrl = (import.meta as any).env?.BASE_URL || '/';
+  const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+  const [imgSrc, setImgSrc] = useState(`${cleanBase}logo.png`);
   const [hasError, setHasError] = useState(false);
 
-  // If the image fails to load, we can also try common extensions like .jpg or .svg
+  // If the image fails to load, we can also try common extensions like .jpg
   // before falling back to the elegant gold CSS signature text.
   const handleImageError = () => {
-    if (imgSrc === '/logo.png') {
-      setImgSrc('/logo.jpg');
-    } else if (imgSrc === '/logo.jpg') {
-      setImgSrc('/logo.svg');
+    if (imgSrc === `${cleanBase}logo.png`) {
+      setImgSrc(`${cleanBase}logo.jpg`);
     } else {
       setHasError(true);
     }
