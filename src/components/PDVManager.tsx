@@ -57,42 +57,59 @@ function crc16(str: string): string {
 
 // Generates the official BR Code payload for static PIX payment
 function generatePixPayload(key: string, name: string, city: string, amount: number, txid: string = 'LALLETREPDV'): string {
-  const cleanKey = key.trim();
-  
-  // Normalize string to remove accents and special chars for safety in EMV
-  const removeAccents = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const cleanName = removeAccents(name).toUpperCase().replace(/[^A-Z0-9 ]/g, '').substring(0, 25) || 'LALLETRE';
-  const cleanCity = removeAccents(city).toUpperCase().replace(/[^A-Z0-9 ]/g, '').substring(0, 15) || 'SAO PAULO';
-  const cleanTxid = removeAccents(txid).toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 25) || '***';
+  try {
+    const safeKey = String(key || '').trim() || 'lallettre@gmail.com';
+    const safeName = String(name || '').trim() || 'LALLETRE MAISON';
+    const safeCity = String(city || '').trim() || 'SAO PAULO';
+    const safeTxid = String(txid || '').trim() || 'LALLETREPDV';
+    const safeAmount = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
 
-  const f = (id: string, val: string) => {
-    const len = val.length.toString().padStart(2, '0');
-    return `${id}${len}${val}`;
-  };
+    // Normalize string to remove accents and special chars for safety in EMV
+    const removeAccents = (s: string) => {
+      try {
+        return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      } catch (e) {
+        return s;
+      }
+    };
 
-  const gui = f('00', 'br.gov.bcb.pix');
-  const keyField = f('01', cleanKey);
-  const merchantAccount = f('26', `${gui}${keyField}`);
+    const cleanKey = safeKey;
+    const cleanName = removeAccents(safeName).toUpperCase().replace(/[^A-Z0-9 ]/g, '').substring(0, 25) || 'LALLETRE';
+    const cleanCity = removeAccents(safeCity).toUpperCase().replace(/[^A-Z0-9 ]/g, '').substring(0, 15) || 'SAO PAULO';
+    const cleanTxid = removeAccents(safeTxid).toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 25) || '***';
 
-  const mcc = f('52', '0000');
-  const currency = f('53', '986');
-  
-  // Format amount to exactly 2 decimal places with a dot separator
-  const amountField = f('54', amount.toFixed(2));
+    const f = (id: string, val: string) => {
+      const len = val.length.toString().padStart(2, '0');
+      return `${id}${len}${val}`;
+    };
 
-  const country = f('58', 'BR');
-  const merchantName = f('59', cleanName);
-  const merchantCity = f('60', cleanCity);
+    const gui = f('00', 'br.gov.bcb.pix');
+    const keyField = f('01', cleanKey);
+    const merchantAccount = f('26', `${gui}${keyField}`);
 
-  const txidField = f('05', cleanTxid);
-  const additionalData = f('62', txidField);
+    const mcc = f('52', '0000');
+    const currency = f('53', '986');
+    
+    // Format amount to exactly 2 decimal places with a dot separator
+    const amountField = f('54', safeAmount.toFixed(2));
 
-  // Combine everything before CRC
-  const payloadFormat = '000201';
-  const rawPayload = `${payloadFormat}${merchantAccount}${mcc}${currency}${amountField}${country}${merchantName}${merchantCity}${additionalData}6304`;
+    const country = f('58', 'BR');
+    const merchantName = f('59', cleanName);
+    const merchantCity = f('60', cleanCity);
 
-  const checksum = crc16(rawPayload);
-  return `${rawPayload}${checksum}`;
+    const txidField = f('05', cleanTxid);
+    const additionalData = f('62', txidField);
+
+    // Combine everything before CRC
+    const payloadFormat = '000201';
+    const rawPayload = `${payloadFormat}${merchantAccount}${mcc}${currency}${amountField}${country}${merchantName}${merchantCity}${additionalData}6304`;
+
+    const checksum = crc16(rawPayload);
+    return `${rawPayload}${checksum}`;
+  } catch (err) {
+    console.error("Error generating PIX payload:", err);
+    return "";
+  }
 }
 
 interface PDVManagerProps {
@@ -142,9 +159,30 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   // PIX Config States
-  const [pixKey, setPixKey] = useState(() => localStorage.getItem('lallettre_pix_key') || 'lallettre@gmail.com');
-  const [pixName, setPixName] = useState(() => localStorage.getItem('lallettre_pix_name') || 'LALLETRE MAISON');
-  const [pixCity, setPixCity] = useState(() => localStorage.getItem('lallettre_pix_city') || 'SAO PAULO');
+  const [pixKey, setPixKey] = useState(() => {
+    try {
+      return localStorage.getItem('lallettre_pix_key') || 'lallettre@gmail.com';
+    } catch (e) {
+      console.warn("Storage access denied:", e);
+      return 'lallettre@gmail.com';
+    }
+  });
+  const [pixName, setPixName] = useState(() => {
+    try {
+      return localStorage.getItem('lallettre_pix_name') || 'LALLETRE MAISON';
+    } catch (e) {
+      console.warn("Storage access denied:", e);
+      return 'LALLETRE MAISON';
+    }
+  });
+  const [pixCity, setPixCity] = useState(() => {
+    try {
+      return localStorage.getItem('lallettre_pix_city') || 'SAO PAULO';
+    } catch (e) {
+      console.warn("Storage access denied:", e);
+      return 'SAO PAULO';
+    }
+  });
   
   const [isConfiguringPix, setIsConfiguringPix] = useState(false);
   const [tempPixKey, setTempPixKey] = useState(pixKey);
@@ -260,9 +298,13 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
     setPixKey(tempPixKey);
     setPixName(tempPixName);
     setPixCity(tempPixCity);
-    localStorage.setItem('lallettre_pix_key', tempPixKey);
-    localStorage.setItem('lallettre_pix_name', tempPixName);
-    localStorage.setItem('lallettre_pix_city', tempPixCity);
+    try {
+      localStorage.setItem('lallettre_pix_key', tempPixKey);
+      localStorage.setItem('lallettre_pix_name', tempPixName);
+      localStorage.setItem('lallettre_pix_city', tempPixCity);
+    } catch (err) {
+      console.warn('Failed to save to localStorage:', err);
+    }
     setIsConfiguringPix(false);
   };
 
@@ -378,8 +420,9 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
     window.print();
   };
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  const formatCurrency = (val: any) => {
+    const num = typeof val === 'number' && !isNaN(val) ? val : 0;
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
   };
 
   return (
