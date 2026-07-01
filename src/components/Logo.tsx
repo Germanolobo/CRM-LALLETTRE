@@ -10,7 +10,7 @@ export default function Logo({ className = '', variant = 'sidebar' }: LogoProps)
   const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const logoSrc = `${cleanBase}logo.png`;
 
-  const sizeClasses = variant === 'sidebar' ? 'h-11 max-h-11 w-auto' : 'h-20 max-h-20 w-auto';
+  const sizeClasses = variant === 'sidebar' ? 'h-[132px] max-h-[132px] w-auto max-w-full' : 'h-[240px] max-h-[240px] w-auto max-w-full';
 
   return (
     <div className={`relative flex items-center justify-center select-none ${className}`}>
