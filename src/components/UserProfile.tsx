@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { User } from '../types';
 import { 
@@ -16,7 +16,10 @@ import {
   AlertCircle,
   Camera,
   Trash2,
-  Upload
+  Upload,
+  Database,
+  ShieldAlert,
+  Check
 } from 'lucide-react';
 
 interface UserProfileProps {
@@ -39,6 +42,90 @@ export default function UserProfile({ currentUser, onUpdateCurrentUser }: UserPr
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Data Management States
+  const [deleteLeads, setDeleteLeads] = useState(false);
+  const [deleteSales, setDeleteSales] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [confirmInput, setConfirmInput] = useState('');
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
+  const [clearSuccess, setClearSuccess] = useState<string | null>(null);
+
+  const handleFirestoreError = (err: unknown, operationType: string, path: string | null) => {
+    const errInfo = {
+      error: err instanceof Error ? err.message : String(err),
+      authInfo: {
+        userId: currentUser.id,
+        email: currentUser.email,
+        role: currentUser.role,
+      },
+      operationType,
+      path
+    };
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  };
+
+  const deleteCollectionInBatches = async (collectionName: string) => {
+    let querySnapshot;
+    try {
+      querySnapshot = await getDocs(collection(db, collectionName));
+    } catch (err) {
+      handleFirestoreError(err, 'list', collectionName);
+      return;
+    }
+
+    const docs = querySnapshot.docs;
+    if (docs.length === 0) return;
+
+    const chunkSize = 400;
+    for (let i = 0; i < docs.length; i += chunkSize) {
+      const chunk = docs.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      try {
+        await batch.commit();
+      } catch (err) {
+        handleFirestoreError(err, 'delete', `${collectionName}/${chunk[0]?.id}`);
+      }
+    }
+  };
+
+  const handleClearData = async () => {
+    if (confirmInput.trim().toUpperCase() !== 'LIMPAR') {
+      setClearError('Por favor, digite a palavra "LIMPAR" exatamente para confirmar.');
+      return;
+    }
+
+    setClearError(null);
+    setClearSuccess(null);
+    setIsClearing(true);
+
+    try {
+      if (deleteLeads) {
+        await deleteCollectionInBatches('leads');
+        await deleteCollectionInBatches('interactions');
+      }
+
+      if (deleteSales) {
+        await deleteCollectionInBatches('sales');
+      }
+
+      setClearSuccess('Os registros selecionados foram excluídos permanentemente com sucesso!');
+      setIsConfirmModalOpen(false);
+      setConfirmInput('');
+      setDeleteLeads(false);
+      setDeleteSales(false);
+    } catch (err) {
+      console.error("Error clearing database collections: ", err);
+      setClearError("Ocorreu um erro ao excluir os dados do banco de dados.");
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -437,6 +524,179 @@ export default function UserProfile({ currentUser, onUpdateCurrentUser }: UserPr
           </form>
         </div>
       </div>
+
+      {/* Data Management Section (Only for Full Access users) */}
+      {currentUser.role === 'Acesso Total' && (
+        <div className="mt-8 glass bg-white/[0.01] border border-white/5 rounded-2xl p-6 relative" id="data-management-card">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-red-800" />
+          
+          <h3 className="font-serif text-base text-white mb-1.5 flex items-center gap-2">
+            <Database className="h-4.5 w-4.5 text-red-500" />
+            Gerenciamento e Limpeza de Dados
+          </h3>
+          <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+            Área de administração para limpeza permanente de registros históricos. Selecione quais categorias de dados deseja apagar. Esta operação é destrutiva e irreversível.
+          </p>
+
+          {clearError && (
+            <div className="mb-5 p-4 bg-red-950/40 border border-red-900/50 rounded-lg text-xs text-red-400 flex items-center gap-2.5">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{clearError}</span>
+            </div>
+          )}
+
+          {clearSuccess && (
+            <div className="mb-5 p-4 bg-emerald-950/40 border border-emerald-900/50 rounded-lg text-xs text-emerald-400 flex items-center gap-2.5">
+              <CheckCircle className="h-4 w-4 shrink-0" />
+              <span>{clearSuccess}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+            {/* Leads Option */}
+            <button
+              type="button"
+              onClick={() => setDeleteLeads(!deleteLeads)}
+              className={`p-4 rounded-xl border text-left transition-all duration-300 cursor-pointer flex flex-col justify-between h-32 ${
+                deleteLeads 
+                  ? 'bg-red-950/10 border-red-500/50 text-white shadow-[0_0_15px_rgba(239,68,68,0.1)]' 
+                  : 'bg-brand-black/40 border-white/5 text-gray-400 hover:border-white/10'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-xs font-serif font-medium ${deleteLeads ? 'text-red-400' : 'text-gray-200'}`}>
+                    Contatos, Leads & Interações
+                  </span>
+                  <div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                    deleteLeads ? 'bg-red-500 border-red-500' : 'border-white/20'
+                  }`}>
+                    {deleteLeads && <Check className="h-3 w-3 text-white" />}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-normal">
+                  Exclui todos os leads/clientes da base e o histórico de contatos (ligações, mensagens, observações e interações).
+                </p>
+              </div>
+              <span className="text-[10px] font-mono tracking-wider opacity-60">COLEÇÕES: LEADS, INTERACTIONS</span>
+            </button>
+
+            {/* Sales Option */}
+            <button
+              type="button"
+              onClick={() => setDeleteSales(!deleteSales)}
+              className={`p-4 rounded-xl border text-left transition-all duration-300 cursor-pointer flex flex-col justify-between h-32 ${
+                deleteSales 
+                  ? 'bg-red-950/10 border-red-500/50 text-white shadow-[0_0_15px_rgba(239,68,68,0.1)]' 
+                  : 'bg-brand-black/40 border-white/5 text-gray-400 hover:border-white/10'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-xs font-serif font-medium ${deleteSales ? 'text-red-400' : 'text-gray-200'}`}>
+                    Registro de Vendas
+                  </span>
+                  <div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                    deleteSales ? 'bg-red-500 border-red-500' : 'border-white/20'
+                  }`}>
+                    {deleteSales && <Check className="h-3 w-3 text-white" />}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-normal">
+                  Apaga todos os registros de vendas realizadas (faturamento). O estoque atual de perfumes permanecerá intacto.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono tracking-wider opacity-60">COLEÇÕES: SALES</span>
+            </button>
+          </div>
+
+          <div className="border-t border-white/5 pt-5 flex justify-end">
+            <button
+              type="button"
+              disabled={!deleteLeads && !deleteSales}
+              onClick={() => setIsConfirmModalOpen(true)}
+              className="w-full sm:w-auto bg-red-700 hover:bg-red-800 disabled:bg-gray-800/40 disabled:text-gray-500 text-white text-xs font-semibold px-6 py-3 rounded-lg shadow-md transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Limpar Dados Selecionados</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog Modal */}
+      {isConfirmModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0D0D0D] border border-red-900/30 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-red-600" />
+            
+            <div className="flex items-start gap-4 mb-4">
+              <div className="h-10 w-10 rounded-full bg-red-950/50 border border-red-900/30 flex items-center justify-center text-red-500 shrink-0">
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="font-serif text-lg font-medium text-white">Confirmar Exclusão Permanente</h4>
+                <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                  Você selecionou apagar os seguintes registros:
+                </p>
+                <ul className="list-disc list-inside text-xs text-red-400 mt-2 space-y-1 font-mono">
+                  {deleteLeads && <li>Clientes, Leads e Histórico de Interações</li>}
+                  {deleteSales && <li>Registro de faturamento e vendas</li>}
+                </ul>
+              </div>
+            </div>
+
+            <div className="bg-red-950/20 border border-red-900/30 rounded-lg p-3 text-xs text-gray-300 leading-relaxed mb-4">
+              <strong>Atenção:</strong> Esta ação é irreversível. Todas as informações selecionadas serão removidas permanentemente do Firestore.
+            </div>
+
+            <div className="space-y-2 mb-6">
+              <label className="block text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                Digite a palavra <span className="text-red-400">LIMPAR</span> para prosseguir:
+              </label>
+              <input
+                type="text"
+                value={confirmInput}
+                onChange={(e) => setConfirmInput(e.target.value)}
+                placeholder="LIMPAR"
+                className="w-full bg-brand-black border border-red-900/20 focus:border-red-500 rounded-lg px-4 py-2.5 text-xs text-gray-200 outline-none font-mono uppercase tracking-widest text-center"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmModalOpen(false);
+                  setConfirmInput('');
+                  setClearError(null);
+                }}
+                className="px-4 py-2 bg-transparent hover:bg-white/[0.02] border border-white/5 rounded-lg text-xs text-gray-400 hover:text-white transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isClearing || confirmInput.trim().toUpperCase() !== 'LIMPAR'}
+                onClick={handleClearData}
+                className="px-5 py-2 bg-red-700 hover:bg-red-800 disabled:bg-gray-800/40 disabled:text-gray-500 rounded-lg text-xs text-white font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                {isClearing ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirmar Exclusão</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
