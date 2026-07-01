@@ -11,10 +11,12 @@ import {
   UserCheck,
   ShieldAlert,
   User,
-  Store
+  Store,
+  Calendar
 } from 'lucide-react';
 import { Product, User as UserType } from '../types';
 import Logo from './Logo';
+import { User as FirebaseUser } from 'firebase/auth';
 
 interface SidebarProps {
   currentTab: string;
@@ -22,9 +24,21 @@ interface SidebarProps {
   products: Product[];
   currentUser: UserType | null;
   onLogout: () => void;
+  googleUser?: FirebaseUser | null;
+  onGoogleLogin?: () => void;
+  onGoogleLogout?: () => void;
 }
 
-export default function Sidebar({ currentTab, setCurrentTab, products, currentUser, onLogout }: SidebarProps) {
+export default function Sidebar({ 
+  currentTab, 
+  setCurrentTab, 
+  products, 
+  currentUser, 
+  onLogout,
+  googleUser,
+  onGoogleLogin,
+  onGoogleLogout
+}: SidebarProps) {
   const lowStockItems = products.filter(p => p.stock < 5 && p.stock > 0);
   const outOfStockItems = products.filter(p => p.stock === 0);
 
@@ -113,6 +127,37 @@ export default function Sidebar({ currentTab, setCurrentTab, products, currentUs
           )}
         </div>
       )}
+
+      {/* Google Agenda Integration Status */}
+      <div className="mx-4 my-2 p-3 rounded-lg bg-white/[0.02] border border-white/5 flex flex-col gap-1.5 text-xs">
+        <div className="flex items-center justify-between text-gray-400 font-medium">
+          <span className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider">
+            <Calendar className="h-3.5 w-3.5 text-terracotta-400 animate-pulse" />
+            <span>Google Agenda</span>
+          </span>
+          <span className={`w-1.5 h-1.5 rounded-full ${googleUser ? 'bg-emerald-500' : 'bg-gray-500'}`}></span>
+        </div>
+        {googleUser ? (
+          <div className="space-y-1">
+            <p className="text-[10px] text-gray-300 font-mono truncate" title={googleUser.email || ''}>
+              {googleUser.displayName || googleUser.email}
+            </p>
+            <button
+              onClick={onGoogleLogout}
+              className="text-[9px] font-mono text-[#B35B48] hover:text-[#9c4c3b] transition-all cursor-pointer block"
+            >
+              Desconectar
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onGoogleLogin}
+            className="w-full mt-1 py-1.5 px-2 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded text-[10px] font-mono text-center text-gray-300 hover:text-white transition-all cursor-pointer flex items-center justify-center gap-1"
+          >
+            <span>Conectar Conta Google</span>
+          </button>
+        )}
+      </div>
 
       {/* User profile section */}
       {currentUser && (

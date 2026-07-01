@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { scheduleCalendarEvent, listCalendarEvents, CalendarEventDetails } from '../utils/calendarAuth';
 import { 
   Users, 
   Plus, 
@@ -39,6 +40,11 @@ interface LeadsManagerProps {
   onOpenSaleModalForLead: (lead: Lead) => void;
   funnelStages?: { id: string; label: string; color: string; bg: string }[];
   onUpdateFunnelStages?: (stages: { id: string; label: string; color: string; bg: string }[]) => Promise<void>;
+  targetLeadForDetails?: Lead | null;
+  onClearTargetLeadDetails?: () => void;
+  googleUser?: any;
+  onGoogleLogin?: () => void;
+  onGoogleLogout?: () => void;
 }
 
 export default function LeadsManager({ 
@@ -51,7 +57,12 @@ export default function LeadsManager({
   onAddInteraction,
   onOpenSaleModalForLead,
   funnelStages = [],
-  onUpdateFunnelStages
+  onUpdateFunnelStages,
+  targetLeadForDetails,
+  onClearTargetLeadDetails,
+  googleUser,
+  onGoogleLogin,
+  onGoogleLogout
 }: LeadsManagerProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -61,6 +72,14 @@ export default function LeadsManager({
 
   // Selected Lead for Details Modal
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+
+  // Synchronize targetLeadForDetails prop with selectedLead local state
+  useEffect(() => {
+    if (targetLeadForDetails) {
+      setSelectedLead(targetLeadForDetails);
+      onClearTargetLeadDetails?.();
+    }
+  }, [targetLeadForDetails]);
 
   // Direct Customer Registration States
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
@@ -106,6 +125,143 @@ export default function LeadsManager({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Modal right column active tab
+  const [activeModalTab, setActiveModalTab] = useState<'history' | 'calendar'>('history');
+
+  // Google Calendar scheduling states
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  
+  // Scheduling form state
+  const [scheduleForm, setScheduleForm] = useState({
+    type: 'Apresentação' as 'Apresentação' | 'Cobrança' | 'Conversa' | 'Outro',
+    summary: '',
+    date: '',
+    time: '14:00',
+    durationMinutes: 60,
+    description: '',
+    attendeeEmail: ''
+  });
+
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [schedulingSuccess, setSchedulingSuccess] = useState<string | null>(null);
+  const [schedulingError, setSchedulingError] = useState<string | null>(null);
+
+  // Load upcoming events when selectedLead changes and Google Calendar is connected
+  useEffect(() => {
+    if (selectedLead) {
+      setActiveModalTab('history');
+      
+      if (googleUser) {
+        setIsLoadingEvents(true);
+        listCalendarEvents()
+          .then(events => {
+            setCalendarEvents(events);
+          })
+          .catch(err => {
+            console.error("Error listing calendar events:", err);
+          })
+          .finally(() => {
+            setIsLoadingEvents(false);
+          });
+      }
+      
+      // Auto-prefill schedule form based on current lead
+      setScheduleForm({
+        type: 'Apresentação',
+        summary: `Apresentação de Perfumes - ${selectedLead.name}`,
+        date: new Date(Date.now() + 86400000).toISOString().split('T')[0], // tomorrow
+        time: '14:00',
+        durationMinutes: 60,
+        description: `Apresentar fragrâncias da Lalletre Maison e demonstrar frascos de interesse (${selectedLead.interestSize}).`,
+        attendeeEmail: selectedLead.email || ''
+      });
+      setSchedulingSuccess(null);
+      setSchedulingError(null);
+    }
+  }, [selectedLead, googleUser]);
+
+  const handleScheduleTypeChange = (type: 'Apresentação' | 'Cobrança' | 'Conversa' | 'Outro') => {
+    if (!selectedLead) return;
+    
+    let summary = '';
+    let description = '';
+    
+    if (type === 'Apresentação') {
+      summary = `Apresentação de Perfumes - ${selectedLead.name}`;
+      description = `Apresentar fragrâncias da Lalletre Maison e demonstrar frascos de interesse (${selectedLead.interestSize}).`;
+    } else if (type === 'Cobrança') {
+      summary = `Cobrança de Venda - ${selectedLead.name}`;
+      description = `Cobrança de vendas pendentes / acerto de contas com o cliente ${selectedLead.name}.`;
+    } else if (type === 'Conversa') {
+      summary = `Conversar com ${selectedLead.name}`;
+      description = `Bate-papo de relacionamento, feedback de uso dos perfumes Lalletre ou acompanhamento de pós-venda.`;
+    } else {
+      summary = `Compromisso - ${selectedLead.name}`;
+      description = `Compromisso comercial agendado com o cliente ${selectedLead.name}.`;
+    }
+
+    setScheduleForm(prev => ({
+      ...prev,
+      type,
+      summary,
+      description
+    }));
+  };
+
+  const handleScheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLead || !googleUser) return;
+
+    // Strict user confirmation dialogue before creating
+    const confirmed = window.confirm(
+      `Confirma o agendamento de "${scheduleForm.summary}" para o dia ${new Date(scheduleForm.date + 'T' + scheduleForm.time).toLocaleDateString('pt-BR')} às ${scheduleForm.time} no seu Google Agenda?`
+    );
+    if (!confirmed) return;
+
+    setIsScheduling(true);
+    setSchedulingSuccess(null);
+    setSchedulingError(null);
+
+    try {
+      const startDateTimeStr = `${scheduleForm.date}T${scheduleForm.time}:00`;
+      const startDate = new Date(startDateTimeStr);
+      const endDate = new Date(startDate.getTime() + scheduleForm.durationMinutes * 60000);
+
+      const eventDetails: CalendarEventDetails = {
+        summary: scheduleForm.summary,
+        description: scheduleForm.description,
+        startTime: startDate.toISOString(),
+        endTime: endDate.toISOString(),
+        attendeeEmail: scheduleForm.attendeeEmail || undefined
+      };
+
+      await scheduleCalendarEvent(eventDetails);
+
+      // Successfully scheduled! Automatically log interaction in CRM database
+      const formattedDate = startDate.toLocaleDateString('pt-BR');
+      const formattedTime = scheduleForm.time;
+      const logContent = `COMPROMISSO AGENDADO NO GOOGLE AGENDA (${scheduleForm.type}):\n"${scheduleForm.summary}" para ${formattedDate} às ${formattedTime}.\nDescrição: ${scheduleForm.description}`;
+
+      await onAddInteraction({
+        clientId: selectedLead.id,
+        type: scheduleForm.type === 'Cobrança' ? 'Nota' : 'Reunião',
+        content: logContent
+      });
+
+      setSchedulingSuccess('Compromisso agendado com sucesso no Google Agenda!');
+      
+      // Refresh list of events
+      const events = await listCalendarEvents();
+      setCalendarEvents(events);
+    } catch (err: any) {
+      console.error('Failed to schedule calendar event:', err);
+      setSchedulingError(err.message || 'Ocorreu um erro ao tentar agendar o compromisso.');
+    } finally {
+      setIsScheduling(false);
+    }
+  };
 
   // Determine the closed/final stage
   const closedStage = funnelStages.find(st => st.id === 'fechado' || st.id === 'vendido' || st.label.toLowerCase().includes('fechad') || st.label.toLowerCase().includes('vend')) 
@@ -1182,82 +1338,311 @@ export default function LeadsManager({
                 )}
               </div>
 
-              {/* Interactions/Logs Column */}
-              <div className="p-6 md:col-span-2 space-y-6 flex flex-col justify-between">
+              {/* Interactions & Google Calendar Column (Tabbed) */}
+              <div className="p-6 md:col-span-2 flex flex-col justify-between h-full space-y-6">
                 
-                {/* List of past interactions */}
-                <div className="space-y-4">
-                  <h4 className="text-xs font-mono font-bold text-terracotta-400 uppercase tracking-wider flex items-center justify-between">
-                    <span>Histórico de Interações ({leadInteractions.length})</span>
-                    <Clock className="h-3.5 w-3.5 text-gray-500" />
-                  </h4>
-
-                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                    {leadInteractions.length === 0 ? (
-                      <div className="py-12 text-center text-xs text-gray-500">
-                        Nenhum contato ou nota registrada ainda.
-                      </div>
-                    ) : (
-                      leadInteractions.map((inter) => (
-                        <div key={inter.id} className="p-3 bg-brand-black/60 border border-terracotta-950/30 rounded-xl relative group">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wide ${
-                              inter.type === 'Mensagem' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-900/20' :
-                              inter.type === 'Ligação' ? 'bg-amber-950/40 text-amber-500 border border-amber-900/20' :
-                              inter.type === 'E-mail' ? 'bg-blue-950/40 text-blue-400 border border-blue-900/20' :
-                              inter.type === 'Reunião' ? 'bg-purple-950/40 text-purple-400 border border-purple-900/20' :
-                              'bg-gray-950/40 text-gray-400 border border-gray-900/20'
-                            }`}>
-                              {inter.type}
-                            </span>
-                            <span className="text-[10px] text-gray-500 font-mono">
-                              {new Date(inter.date).toLocaleString('pt-BR')}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-200 leading-relaxed whitespace-pre-wrap">{inter.content}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                {/* Tab Switcher */}
+                <div className="flex border-b border-terracotta-950/40 pb-2 gap-4">
+                  <button
+                    onClick={() => setActiveModalTab('history')}
+                    className={`pb-2 text-xs font-mono font-bold uppercase tracking-wider transition-all border-b-2 -mb-2.5 cursor-pointer ${
+                      activeModalTab === 'history'
+                        ? 'text-white border-[#B35B48]'
+                        : 'text-gray-500 hover:text-gray-300 border-transparent'
+                    }`}
+                  >
+                    Histórico & Notas ({leadInteractions.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveModalTab('calendar')}
+                    className={`pb-2 text-xs font-mono font-bold uppercase tracking-wider transition-all border-b-2 -mb-2.5 flex items-center gap-1.5 cursor-pointer ${
+                      activeModalTab === 'calendar'
+                        ? 'text-white border-[#B35B48]'
+                        : 'text-gray-500 hover:text-gray-300 border-transparent'
+                    }`}
+                  >
+                    <Calendar className="h-3.5 w-3.5 text-terracotta-400" />
+                    <span>Google Agenda</span>
+                    {googleUser && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>}
+                  </button>
                 </div>
 
-                {/* Log interaction form */}
-                <form onSubmit={handleAddInteractionSubmit} className="pt-4 border-t border-terracotta-950/40 space-y-3.5">
-                  <h4 className="text-xs font-mono font-bold text-gray-400 uppercase tracking-wider">Logar Novo Contato</h4>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="w-full sm:w-40">
-                      <select
-                        value={newInteraction.type}
-                        onChange={(e) => setNewInteraction({ ...newInteraction, type: e.target.value as any })}
-                        className="w-full bg-brand-black border border-terracotta-950 focus:border-terracotta-600 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none h-10 transition-all duration-300"
-                      >
-                        <option value="Mensagem">Mensagem (Whatsapp/Insta)</option>
-                        <option value="Ligação">Ligação</option>
-                        <option value="E-mail">E-mail</option>
-                        <option value="Reunião">Reunião / Visita</option>
-                        <option value="Nota">Nota Interna</option>
-                      </select>
+                {activeModalTab === 'history' ? (
+                  <>
+                    {/* List of past interactions */}
+                    <div className="space-y-4 flex-1">
+                      <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                        {leadInteractions.length === 0 ? (
+                          <div className="py-12 text-center text-xs text-gray-500">
+                            Nenhum contato ou nota registrada ainda.
+                          </div>
+                        ) : (
+                          leadInteractions.map((inter) => (
+                            <div key={inter.id} className="p-3 bg-brand-black/60 border border-terracotta-950/30 rounded-xl relative group">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wide ${
+                                  inter.type === 'Mensagem' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-900/20' :
+                                  inter.type === 'Ligação' ? 'bg-amber-950/40 text-amber-500 border border-amber-900/20' :
+                                  inter.type === 'E-mail' ? 'bg-blue-950/40 text-blue-400 border border-blue-900/20' :
+                                  inter.type === 'Reunião' ? 'bg-purple-950/40 text-purple-400 border border-purple-900/20' :
+                                  'bg-gray-950/40 text-gray-400 border border-gray-900/20'
+                                }`}>
+                                  {inter.type}
+                                </span>
+                                <span className="text-[10px] text-gray-500 font-mono">
+                                  {new Date(inter.date).toLocaleString('pt-BR')}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-200 leading-relaxed whitespace-pre-wrap">{inter.content}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex-1 relative">
-                      <input
-                        type="text"
-                        required
-                        placeholder="Escreva os detalhes do contato feito..."
-                        value={newInteraction.content}
-                        onChange={(e) => setNewInteraction({ ...newInteraction, content: e.target.value })}
-                        className="w-full bg-brand-black border border-terracotta-950 focus:border-terracotta-600 rounded-lg pl-3 pr-12 py-2 text-xs text-gray-200 placeholder-gray-500 outline-none h-10 transition-all duration-300"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="absolute right-1.5 top-1.5 bg-gradient-to-r from-terracotta-600 to-terracotta-700 hover:from-terracotta-500 hover:to-terracotta-600 text-white text-[10px] font-bold px-3 h-7 rounded-md transition-all duration-300"
-                      >
-                        {isSubmitting ? '...' : 'Registrar'}
-                      </button>
-                    </div>
+                    {/* Log interaction form */}
+                    <form onSubmit={handleAddInteractionSubmit} className="pt-4 border-t border-terracotta-950/40 space-y-3.5">
+                      <h4 className="text-xs font-mono font-bold text-gray-400 uppercase tracking-wider">Logar Novo Contato</h4>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="w-full sm:w-40">
+                          <select
+                            value={newInteraction.type}
+                            onChange={(e) => setNewInteraction({ ...newInteraction, type: e.target.value as any })}
+                            className="w-full bg-brand-black border border-terracotta-950 focus:border-terracotta-600 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none h-10 transition-all duration-300 cursor-pointer"
+                          >
+                            <option value="Mensagem">Mensagem (Whatsapp/Insta)</option>
+                            <option value="Ligação">Ligação</option>
+                            <option value="E-mail">E-mail</option>
+                            <option value="Reunião">Reunião / Visita</option>
+                            <option value="Nota">Nota Interna</option>
+                          </select>
+                        </div>
+
+                        <div className="flex-1 relative">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Escreva os detalhes do contato feito..."
+                            value={newInteraction.content}
+                            onChange={(e) => setNewInteraction({ ...newInteraction, content: e.target.value })}
+                            className="w-full bg-brand-black border border-terracotta-950 focus:border-terracotta-600 rounded-lg pl-3 pr-12 py-2 text-xs text-gray-200 placeholder-gray-500 outline-none h-10 transition-all duration-300"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className="absolute right-1.5 top-1.5 bg-gradient-to-r from-terracotta-600 to-terracotta-700 hover:from-terracotta-500 hover:to-terracotta-600 text-white text-[10px] font-bold px-3 h-7 rounded-md transition-all duration-300 cursor-pointer"
+                          >
+                            {isSubmitting ? '...' : 'Registrar'}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <div className="space-y-5 overflow-y-auto max-h-[420px] pr-1 flex-1">
+                    {!googleUser ? (
+                      <div className="p-8 text-center bg-brand-black/40 border border-white/5 rounded-xl space-y-4 my-4">
+                        <div className="mx-auto w-12 h-12 rounded-full bg-terracotta-950/50 flex items-center justify-center border border-terracotta-850 animate-pulse">
+                          <Calendar className="h-6 w-6 text-[#B35B48]" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-semibold text-white">Google Agenda Desconectado</h4>
+                          <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                            Conecte sua conta do Google para poder agendar cobranças, reuniões ou visitas de demonstração de perfumes com este cliente de forma totalmente integrada.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={onGoogleLogin}
+                          className="px-5 py-2.5 bg-[#B35B48] hover:bg-[#9c4c3b] text-white font-semibold text-xs rounded-lg transition-all cursor-pointer shadow-md inline-flex items-center gap-2"
+                        >
+                          <Calendar className="h-4 w-4" />
+                          <span>Conectar Google Agenda</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 divide-y lg:divide-y-0 lg:divide-x divide-white/5">
+                        
+                        {/* Scheduler Form */}
+                        <form onSubmit={handleScheduleSubmit} className="space-y-4 pt-2">
+                          <h4 className="text-xs font-mono font-bold text-terracotta-400 uppercase tracking-wider">Agendar Novo Compromisso</h4>
+                          
+                          {/* Alert messages */}
+                          {schedulingSuccess && (
+                            <div className="p-3 bg-emerald-950/40 text-emerald-400 text-xs rounded-lg border border-emerald-900/30">
+                              {schedulingSuccess}
+                            </div>
+                          )}
+                          {schedulingError && (
+                            <div className="p-3 bg-red-950/40 text-red-400 text-xs rounded-lg border border-red-900/30">
+                              {schedulingError}
+                            </div>
+                          )}
+
+                          {/* Quick selection of type */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-mono font-bold text-gray-400 uppercase">Tipo de Compromisso</label>
+                            <div className="grid grid-cols-4 gap-1">
+                              {(['Apresentação', 'Cobrança', 'Conversa', 'Outro'] as const).map(t => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => handleScheduleTypeChange(t)}
+                                  className={`py-1.5 px-1 rounded text-[10px] font-mono text-center border transition-all cursor-pointer ${
+                                    scheduleForm.type === t
+                                      ? 'bg-terracotta-900/40 text-[#B35B48] border-[#B35B48]/50 font-bold'
+                                      : 'bg-brand-black/30 text-gray-400 border-white/5 hover:text-white'
+                                  }`}
+                                >
+                                  {t === 'Apresentação' ? 'Apreset' : t}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Summary Title */}
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-mono font-bold text-gray-400 uppercase">Título do Evento</label>
+                            <input
+                              type="text"
+                              required
+                              value={scheduleForm.summary}
+                              onChange={e => setScheduleForm(prev => ({ ...prev, summary: e.target.value }))}
+                              placeholder="Ex: Apresentação de Perfumes"
+                              className="w-full bg-brand-black border border-white/10 focus:border-[#B35B48] rounded px-3 py-2 text-xs text-gray-200 outline-none transition-all duration-300"
+                            />
+                          </div>
+
+                          {/* Date and Time */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-mono font-bold text-gray-400 uppercase">Data</label>
+                              <input
+                                type="date"
+                                required
+                                value={scheduleForm.date}
+                                onChange={e => setScheduleForm(prev => ({ ...prev, date: e.target.value }))}
+                                className="w-full bg-brand-black border border-white/10 focus:border-[#B35B48] rounded px-3 py-2 text-xs text-gray-200 outline-none transition-all duration-300"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-mono font-bold text-gray-400 uppercase">Hora</label>
+                              <input
+                                type="time"
+                                required
+                                value={scheduleForm.time}
+                                onChange={e => setScheduleForm(prev => ({ ...prev, time: e.target.value }))}
+                                className="w-full bg-brand-black border border-white/10 focus:border-[#B35B48] rounded px-3 py-2 text-xs text-gray-200 outline-none transition-all duration-300"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Duration and Guest */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-mono font-bold text-gray-400 uppercase">Duração</label>
+                              <select
+                                value={scheduleForm.durationMinutes}
+                                onChange={e => setScheduleForm(prev => ({ ...prev, durationMinutes: Number(e.target.value) }))}
+                                className="w-full bg-brand-black border border-white/10 focus:border-[#B35B48] rounded px-2 py-2 text-xs text-gray-300 outline-none transition-all duration-300 cursor-pointer"
+                              >
+                                <option value={30}>30 minutos</option>
+                                <option value={60}>1 hora</option>
+                                <option value={90}>1 hora e meia</option>
+                                <option value={120}>2 horas</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-mono font-bold text-gray-400 uppercase">E-mail Convidado (Lead)</label>
+                              <input
+                                type="email"
+                                value={scheduleForm.attendeeEmail}
+                                onChange={e => setScheduleForm(prev => ({ ...prev, attendeeEmail: e.target.value }))}
+                                placeholder="E-mail para convite"
+                                className="w-full bg-brand-black border border-white/10 focus:border-[#B35B48] rounded px-3 py-2 text-xs text-gray-200 outline-none transition-all duration-300 font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Description */}
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-mono font-bold text-gray-400 uppercase">Descrição / Notas do Evento</label>
+                            <textarea
+                              rows={2}
+                              value={scheduleForm.description}
+                              onChange={e => setScheduleForm(prev => ({ ...prev, description: e.target.value }))}
+                              placeholder="O que será abordado na reunião..."
+                              className="w-full bg-brand-black border border-white/10 focus:border-[#B35B48] rounded px-3 py-2 text-xs text-gray-200 outline-none transition-all duration-300 resize-none"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={isScheduling || !scheduleForm.date}
+                            className="w-full py-2.5 bg-[#B35B48] hover:bg-[#9c4c3b] disabled:bg-[#4d2c25] disabled:text-gray-500 text-white font-semibold text-xs rounded-lg transition-all cursor-pointer shadow-md inline-flex items-center justify-center gap-1.5"
+                          >
+                            <Calendar className="h-4 w-4" />
+                            <span>{isScheduling ? 'Agendando...' : 'Agendar no Google Agenda'}</span>
+                          </button>
+                        </form>
+
+                        {/* Calendar Upcoming Schedule */}
+                        <div className="lg:pl-6 space-y-4 pt-6 lg:pt-0">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-mono font-bold text-gray-400 uppercase tracking-wider">Próximos na Agenda</h4>
+                            <span className="text-[10px] font-mono text-emerald-400 font-bold">Conectado</span>
+                          </div>
+
+                          {isLoadingEvents ? (
+                            <div className="py-12 text-center text-xs text-gray-500 font-mono flex items-center justify-center gap-1.5">
+                              <span className="w-3 h-3 rounded-full border border-terracotta-400 border-t-transparent animate-spin"></span>
+                              <span>Carregando agenda...</span>
+                            </div>
+                          ) : calendarEvents.length === 0 ? (
+                            <div className="py-12 text-center text-xs text-gray-500">
+                              Nenhum compromisso agendado nos próximos dias.
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                              {calendarEvents.map((evt, idx) => {
+                                const startStr = evt.start?.dateTime || evt.start?.date || '';
+                                const startDate = startStr ? new Date(startStr) : null;
+                                return (
+                                  <div key={evt.id || idx} className="p-2.5 bg-brand-black/40 border border-white/5 rounded-lg flex flex-col gap-1 text-left">
+                                    <span className="text-xs text-gray-200 font-bold truncate">{evt.summary}</span>
+                                    <div className="flex items-center justify-between text-[10px] font-mono text-gray-400">
+                                      <span>
+                                        {startDate ? startDate.toLocaleDateString('pt-BR') : 'Sem data'}
+                                      </span>
+                                      <span>
+                                        {startDate ? startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                      </span>
+                                    </div>
+                                    {evt.description && (
+                                      <p className="text-[10px] text-gray-500 truncate mt-0.5">{evt.description}</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          <div className="text-right">
+                            <button
+                              type="button"
+                              onClick={onGoogleLogout}
+                              className="text-[10px] font-mono text-gray-500 hover:text-red-400 transition-all cursor-pointer"
+                            >
+                              Desconectar Google Agenda
+                            </button>
+                          </div>
+
+                        </div>
+
+                      </div>
+                    )}
                   </div>
-                </form>
+                )}
 
               </div>
 

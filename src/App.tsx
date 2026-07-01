@@ -18,6 +18,8 @@ import Login from './components/Login';
 import TeamManager from './components/TeamManager';
 import UserProfile from './components/UserProfile';
 import { Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { initAuth, googleSignIn, logoutGoogle } from './utils/calendarAuth';
+import { User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
@@ -28,6 +30,46 @@ export default function App() {
     const saved = localStorage.getItem('lalletre_crm_session');
     return saved ? JSON.parse(saved) : null;
   });
+
+  // Google Calendar Integration States
+  const [googleUser, setGoogleUser] = useState<FirebaseUser | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleToken(res.accessToken);
+      }
+    } catch (err) {
+      console.error('Google Calendar login failed:', err);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    try {
+      await logoutGoogle();
+      setGoogleUser(null);
+      setGoogleToken(null);
+    } catch (err) {
+      console.error('Google Calendar logout failed:', err);
+    }
+  };
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -375,6 +417,9 @@ export default function App() {
         products={products}
         currentUser={currentUser}
         onLogout={handleLogout}
+        googleUser={googleUser}
+        onGoogleLogin={handleGoogleLogin}
+        onGoogleLogout={handleGoogleLogout}
       />
 
       {/* Main Panel Content Area */}
@@ -419,6 +464,11 @@ export default function App() {
                 onOpenSaleModalForLead={handleOpenSaleModalForLead}
                 funnelStages={funnelStages}
                 onUpdateFunnelStages={handleUpdateFunnelStages}
+                targetLeadForDetails={targetLeadForDetails}
+                onClearTargetLeadDetails={() => setTargetLeadForDetails(null)}
+                googleUser={googleUser}
+                onGoogleLogin={handleGoogleLogin}
+                onGoogleLogout={handleGoogleLogout}
               />
             )}
 
