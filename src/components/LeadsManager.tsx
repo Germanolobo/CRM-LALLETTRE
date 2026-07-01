@@ -22,7 +22,9 @@ import {
   ArrowRightLeft,
   Sliders,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  UserPlus,
+  Check
 } from 'lucide-react';
 import { Lead, LeadStatus, Product, Interaction } from '../types';
 
@@ -55,10 +57,21 @@ export default function LeadsManager({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [sourceFilter, setSourceFilter] = useState<string>('All');
-  const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'customers'>('kanban');
 
   // Selected Lead for Details Modal
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+
+  // Direct Customer Registration States
+  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+  const [newClientForm, setNewClientForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    interestSize: '100ml',
+    notes: '',
+    source: 'Cadastro Direto'
+  });
 
   // Kanban Columns from dynamic funnelStages
   const columns = funnelStages && funnelStages.length > 0 ? funnelStages : [
@@ -94,6 +107,12 @@ export default function LeadsManager({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Determine the closed/final stage
+  const closedStage = funnelStages.find(st => st.id === 'fechado' || st.id === 'vendido' || st.label.toLowerCase().includes('fechad') || st.label.toLowerCase().includes('vend')) 
+    || funnelStages[funnelStages.length - 1]
+    || { id: 'fechado' };
+  const closedStatus = closedStage ? closedStage.id : 'fechado';
+
   // Filtered Leads
   const filteredLeads = leads.filter(lead => {
     const matchesSearch = lead.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -105,6 +124,55 @@ export default function LeadsManager({
 
     return matchesSearch && matchesStatus && matchesSource;
   });
+
+  // Filtered Clientes Cadastrados
+  const registeredCustomers = leads.filter(lead => {
+    const isCustomer = lead.status === closedStatus || lead.totalSpent > 0 || lead.source === 'Cadastro Direto' || lead.source === 'PDV (Físico)';
+    if (!isCustomer) return false;
+
+    const matchesSearch = lead.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          lead.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          lead.phone.includes(searchQuery);
+    
+    const matchesSource = sourceFilter === 'All' || lead.source === sourceFilter;
+
+    return matchesSearch && matchesSource;
+  });
+
+  const handleOpenAddClientModal = () => {
+    setNewClientForm({
+      name: '',
+      email: '',
+      phone: '',
+      interestSize: '100ml',
+      notes: '',
+      source: 'Cadastro Direto'
+    });
+    setIsAddClientModalOpen(true);
+  };
+
+  const handleAddClientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClientForm.name.trim()) return;
+
+    try {
+      setIsSubmitting(true);
+      await onAddLead({
+        name: newClientForm.name.trim(),
+        email: newClientForm.email.trim() || `${Date.now()}@lallettre.com`,
+        phone: newClientForm.phone.trim(),
+        status: closedStatus,
+        interestSize: newClientForm.interestSize,
+        notes: newClientForm.notes.trim() || 'Cliente cadastrado diretamente (Bypass de funil).',
+        source: newClientForm.source
+      });
+      setIsAddClientModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Handler to open Add Modal and set default status
   const handleOpenAddModal = () => {
@@ -260,7 +328,7 @@ export default function LeadsManager({
                   : 'text-gray-400 hover:text-white'
               }`}
             >
-              Pipeline
+              Funil (Pipeline)
             </button>
             <button
               onClick={() => setViewMode('list')}
@@ -270,7 +338,17 @@ export default function LeadsManager({
                   : 'text-gray-400 hover:text-white'
               }`}
             >
-              Lista
+              Todos os Leads
+            </button>
+            <button
+              onClick={() => setViewMode('customers')}
+              className={`px-3 py-1.5 rounded text-xs font-normal transition-all cursor-pointer ${
+                viewMode === 'customers' 
+                  ? 'bg-[#B35B48] text-white' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Clientes Cadastrados
             </button>
           </div>
 
@@ -284,13 +362,25 @@ export default function LeadsManager({
             <span className="hidden sm:inline">Etapas do Funil</span>
           </button>
 
-          <button
-            onClick={handleOpenAddModal}
-            className="px-4 py-2 bg-[#B35B48] text-white text-xs rounded hover:bg-[#9c4c3b] cursor-pointer transition-all duration-300"
-            id="add-lead-btn"
-          >
-            + Novo Lead
-          </button>
+          {viewMode === 'customers' ? (
+            <button
+              onClick={handleOpenAddClientModal}
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold rounded cursor-pointer transition-all duration-300 flex items-center gap-1.5"
+              id="add-client-btn"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>Cadastrar Cliente</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleOpenAddModal}
+              className="px-4 py-2 bg-[#B35B48] hover:bg-[#9c4c3b] text-white text-xs font-semibold rounded cursor-pointer transition-all duration-300 flex items-center gap-1.5"
+              id="add-lead-btn"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Novo Lead</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -405,7 +495,7 @@ export default function LeadsManager({
             );
           })}
         </div>
-      ) : (
+      ) : viewMode === 'list' ? (
         /* List View */
         <div className="glass rounded-lg overflow-hidden" id="leads-list">
           <div className="overflow-x-auto">
@@ -490,6 +580,98 @@ export default function LeadsManager({
                             }}
                             className="p-1.5 rounded-md hover:bg-brand-black text-gray-500 hover:text-red-400 transition-all"
                             title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Customers View */
+        <div className="glass rounded-lg overflow-hidden" id="customers-list">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/10 text-[11px] font-sans font-medium tracking-wider text-gray-500 uppercase bg-white/[0.01]">
+                  <th className="py-4 px-6 font-normal">Nome do Cliente</th>
+                  <th className="py-4 px-6 font-normal">Contato</th>
+                  <th className="py-4 px-6 font-normal">Origem</th>
+                  <th className="py-4 px-6 font-normal">Interesse</th>
+                  <th className="py-4 px-6 font-normal">Observações</th>
+                  <th className="py-4 px-6 text-right font-normal">Total Consumido</th>
+                  <th className="py-4 px-6 text-right font-normal">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-xs">
+                {registeredCustomers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-gray-500 font-mono">
+                      Nenhum cliente cadastrado encontrado com os filtros selecionados.
+                    </td>
+                  </tr>
+                ) : (
+                  registeredCustomers.map((lead) => (
+                    <tr 
+                      key={lead.id}
+                      className="hover:bg-white/[0.02] transition-all duration-200 cursor-pointer"
+                      onClick={() => setSelectedLead(lead)}
+                    >
+                      <td className="py-3.5 px-6 font-semibold text-white">
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          <span>{lead.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-6">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-gray-300 font-mono">{lead.phone || '-'}</span>
+                          <span className="text-[10px] text-gray-500">{lead.email || '-'}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-6">
+                        <span className="bg-[#B35B48]/15 border border-[#B35B48]/20 text-[#B35B48] px-2 py-0.5 rounded text-[10px] font-mono">
+                          {lead.source}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-6 font-mono text-gray-300">{lead.interestSize}</td>
+                      <td className="py-3.5 px-6 text-gray-400 truncate max-w-[200px]" title={lead.notes}>
+                        {lead.notes || 'Sem observações.'}
+                      </td>
+                      <td className="py-3.5 px-6 text-right font-mono font-bold text-[#B35B48]">
+                        {lead.totalSpent > 0 ? `R$ ${lead.totalSpent.toFixed(2)}` : 'R$ 0,00'}
+                      </td>
+                      <td className="py-3.5 px-6 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setSelectedLead(lead)}
+                            className="p-1.5 rounded-md hover:bg-brand-black text-gray-400 hover:text-white transition-all"
+                            title="Ver Detalhes & Interações"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                          
+                          <button
+                            onClick={() => onOpenSaleModalForLead(lead)}
+                            className="p-1.5 rounded-md hover:bg-brand-black text-[#B35B48] hover:text-[#c26a57] transition-all"
+                            title="Registrar Compra (PDV)"
+                          >
+                            <ShoppingBag className="h-4 w-4" />
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              if(confirm(`Excluir o cliente ${lead.name}?`)) {
+                                onDeleteLead(lead.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-md hover:bg-brand-black text-gray-500 hover:text-red-400 transition-all"
+                            title="Excluir Cliente"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -622,6 +804,124 @@ export default function LeadsManager({
                   className="bg-gradient-to-r from-terracotta-600 to-terracotta-700 hover:from-terracotta-500 hover:to-terracotta-600 text-white text-xs font-semibold px-5 py-2.5 rounded-lg shadow-md transition-all duration-300"
                 >
                   {isSubmitting ? 'Salvando...' : 'Cadastrar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Client Modal */}
+      {isAddClientModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" id="add-client-modal">
+          <div className="glass bg-[#0A0A0A] rounded-lg border border-white/10 w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-emerald-950 flex items-center justify-between bg-brand-black/40">
+              <h3 className="font-serif text-xl font-bold text-white flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-emerald-400" />
+                <span>Cadastrar Cliente Direto</span>
+              </h3>
+              <button 
+                onClick={() => setIsAddClientModalOpen(false)}
+                className="text-gray-500 hover:text-white rounded-lg p-1 hover:bg-brand-black transition-all"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddClientSubmit} className="p-6 space-y-4">
+              <div className="bg-emerald-950/20 border border-emerald-900/30 text-emerald-400 text-[11px] p-3 rounded-lg leading-relaxed">
+                Este formulário cadastra o cliente diretamente na base de dados (bypassando o funil de leads). Ele estará imediatamente disponível para seleção no PDV (Frente de Loja).
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-bold text-gray-400 uppercase mb-1">Nome Completo do Cliente *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Carlos Eduardo de Souza"
+                  value={newClientForm.name}
+                  onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
+                  className="w-full bg-brand-black border border-emerald-950 focus:border-emerald-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-600 outline-none transition-all duration-300"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono font-bold text-gray-400 uppercase mb-1">WhatsApp / Telefone</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: (11) 97777-8888"
+                    value={newClientForm.phone}
+                    onChange={(e) => setNewClientForm({ ...newClientForm, phone: e.target.value })}
+                    className="w-full bg-brand-black border border-emerald-950 focus:border-emerald-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-600 outline-none transition-all duration-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-mono font-bold text-gray-400 uppercase mb-1">E-mail</label>
+                  <input
+                    type="email"
+                    placeholder="Ex: carlos@gmail.com"
+                    value={newClientForm.email}
+                    onChange={(e) => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                    className="w-full bg-brand-black border border-emerald-950 focus:border-emerald-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-600 outline-none transition-all duration-300"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono font-bold text-gray-400 uppercase mb-1">Origem do Cadastro</label>
+                  <select
+                    value={newClientForm.source}
+                    onChange={(e) => setNewClientForm({ ...newClientForm, source: e.target.value })}
+                    className="w-full bg-brand-black border border-emerald-950 focus:border-emerald-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-300 outline-none transition-all duration-300"
+                  >
+                    <option value="Cadastro Direto">Cadastro Manual</option>
+                    <option value="PDV (Físico)">Loja Física / PDV</option>
+                    <option value="Indicação">Indicação de Amigo</option>
+                    <option value="Instagram">Instagram</option>
+                    <option value="WhatsApp">WhatsApp</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-mono font-bold text-gray-400 uppercase mb-1">Frasco de Interesse</label>
+                  <select
+                    value={newClientForm.interestSize}
+                    onChange={(e) => setNewClientForm({ ...newClientForm, interestSize: e.target.value })}
+                    className="w-full bg-brand-black border border-emerald-950 focus:border-emerald-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-300 outline-none transition-all duration-300"
+                  >
+                    <option value="100ml">Lalletre 100ml</option>
+                    <option value="50ml">Lalletre 50ml</option>
+                    <option value="Ambos">Ambos / Outro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-bold text-gray-400 uppercase mb-1">Observações do Cliente (Opcional)</label>
+                <textarea
+                  placeholder="Preferências olfativas, notas importantes ou datas especiais..."
+                  value={newClientForm.notes}
+                  rows={3}
+                  onChange={(e) => setNewClientForm({ ...newClientForm, notes: e.target.value })}
+                  className="w-full bg-brand-black border border-emerald-950 focus:border-emerald-600 rounded-lg px-3.5 py-2.5 text-sm text-gray-200 placeholder-gray-600 outline-none resize-none transition-all duration-300"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-emerald-950/40">
+                <button
+                  type="button"
+                  onClick={() => setIsAddClientModalOpen(false)}
+                  className="bg-brand-black hover:bg-brand-card-light text-xs font-medium text-gray-400 hover:text-white px-4 py-2.5 rounded-lg border border-emerald-950 transition-all duration-300"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white text-xs font-semibold px-5 py-2.5 rounded-lg shadow-md transition-all duration-300"
+                >
+                  {isSubmitting ? 'Salvando...' : 'Cadastrar Cliente'}
                 </button>
               </div>
             </form>
