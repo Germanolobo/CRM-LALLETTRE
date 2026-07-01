@@ -31,7 +31,7 @@ export default function TeamManager({ currentUser }: TeamManagerProps) {
   // Invite Form States
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'Acesso Total' | 'Apenas Leads' | 'Apenas Estoque'>('Apenas Leads');
+  const [inviteRole, setInviteRole] = useState<User['role']>('Apenas Leads');
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
@@ -182,7 +182,7 @@ export default function TeamManager({ currentUser }: TeamManagerProps) {
     }
   };
 
-  const handleUpdateRole = async (userId: string, currentRole: string, newRole: 'Acesso Total' | 'Apenas Leads' | 'Apenas Estoque') => {
+  const handleUpdateRole = async (userId: string, currentRole: string, newRole: User['role']) => {
     try {
       await updateDoc(doc(db, 'users', userId), {
         role: newRole
@@ -365,6 +365,7 @@ export default function TeamManager({ currentUser }: TeamManagerProps) {
                             <option value="Acesso Total">Acesso Total (ADM)</option>
                             <option value="Apenas Leads">Apenas Leads</option>
                             <option value="Apenas Estoque">Apenas Estoque</option>
+                            <option value="Vendedor">Vendedor</option>
                           </select>
                         )}
                       </td>
@@ -451,6 +452,7 @@ export default function TeamManager({ currentUser }: TeamManagerProps) {
                 >
                   <option value="Apenas Leads">Apenas Leads (Acessa Leads & Contatos)</option>
                   <option value="Apenas Estoque">Apenas Estoque (Acessa Estoque & Vendas)</option>
+                  <option value="Vendedor">Vendedor (Apenas PDV & Suas Vendas)</option>
                   <option value="Acesso Total">Acesso Total (Acessa Tudo + Configurações)</option>
                 </select>
                 <p className="text-[10px] text-gray-500 leading-relaxed mt-1">

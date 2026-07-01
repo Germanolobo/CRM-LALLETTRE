@@ -43,8 +43,7 @@ import {
   LogOut,
   Bell
 } from 'lucide-react';
-import { initAuth, googleSignIn, logoutGoogle } from './utils/calendarAuth';
-import { User as FirebaseUser } from 'firebase/auth';
+import { initAuth, googleSignIn, logoutGoogle, setProfileUserId, getConnectedGoogleUser } from './utils/calendarAuth';
 import Logo from './components/Logo';
 
 export default function App() {
@@ -71,14 +70,43 @@ export default function App() {
   });
 
   // Google Calendar Integration States
-  const [googleUser, setGoogleUser] = useState<FirebaseUser | null>(null);
+  const [googleUser, setGoogleUser] = useState<any | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
 
   useEffect(() => {
+    if (currentUser) {
+      setProfileUserId(currentUser.id);
+      
+      const cached = getConnectedGoogleUser();
+      if (cached) {
+        if (cached.email?.toLowerCase() === currentUser.email?.toLowerCase()) {
+          setGoogleUser(cached);
+          setGoogleToken(localStorage.getItem(`lallettre_google_token_${currentUser.id}`));
+        } else {
+          logoutGoogle();
+          setGoogleUser(null);
+          setGoogleToken(null);
+        }
+      } else {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    } else {
+      setProfileUserId(null);
+      setGoogleUser(null);
+      setGoogleToken(null);
+    }
+
     const unsubscribe = initAuth(
       (user, token) => {
-        setGoogleUser(user);
-        setGoogleToken(token);
+        if (currentUser && user.email?.toLowerCase() === currentUser.email?.toLowerCase()) {
+          setGoogleUser(user);
+          setGoogleToken(token);
+        } else {
+          logoutGoogle();
+          setGoogleUser(null);
+          setGoogleToken(null);
+        }
       },
       () => {
         setGoogleUser(null);
@@ -86,16 +114,22 @@ export default function App() {
       }
     );
     return () => unsubscribe();
-  }, []);
+  }, [currentUser]);
 
   const handleGoogleLogin = async () => {
+    if (!currentUser) return;
     try {
-      const res = await googleSignIn();
+      const res = await googleSignIn(currentUser.email);
       if (res) {
-        setGoogleUser(res.user);
+        setGoogleUser({
+          email: res.user.email,
+          displayName: res.user.displayName,
+          photoURL: res.user.photoURL
+        });
         setGoogleToken(res.accessToken);
       }
-    } catch (err) {
+    } catch (err: any) {
+      alert(err.message || 'Falha ao conectar com o Google Agenda.');
       console.error('Google Calendar login failed:', err);
     }
   };
@@ -111,6 +145,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    handleGoogleLogout();
     setCurrentUser(null);
     localStorage.removeItem('lalletre_crm_session');
     setCurrentTab('dashboard');
@@ -382,6 +417,8 @@ export default function App() {
       const newSale: Sale = {
         ...saleForm,
         id: saleId,
+        sellerId: currentUser?.id,
+        sellerName: currentUser?.name,
         date: new Date().toISOString()
       };
       transaction.set(doc(db, 'sales', saleId), newSale);
@@ -460,6 +497,12 @@ export default function App() {
         { id: 'stock', label: 'Estoque', icon: Package },
         { id: 'sales', label: 'Vendas', icon: BadgePercent },
       ];
+    } else if (role === 'Vendedor') {
+      return [
+        { id: 'dashboard', label: 'Painel', icon: LayoutDashboard },
+        { id: 'pdv', label: 'PDV', icon: Store },
+        { id: 'profile', label: 'Perfil', icon: UserIcon },
+      ];
     } else {
       // Full Access
       return [
@@ -486,7 +529,7 @@ export default function App() {
         { id: 'sales', name: 'Registro de Vendas', icon: BadgePercent, roles: ['Acesso Total', 'Apenas Estoque'] },
         { id: 'interactions', name: 'Histórico de Contatos', icon: History, roles: ['Acesso Total', 'Apenas Leads'] },
         { id: 'team', name: 'Equipe & Acessos', icon: UserCheck, roles: ['Acesso Total'] },
-        { id: 'profile', name: 'Meu Perfil', icon: UserIcon, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque'] },
+        { id: 'profile', name: 'Meu Perfil', icon: UserIcon, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque', 'Vendedor'] },
       ];
       return allItems.filter(item => {
         const isPrimary = mobilePrimaryTabs.some(pt => pt.id === item.id);
@@ -517,6 +560,7 @@ export default function App() {
               onQuickAddLead={handleQuickAddLead}
               onQuickAddSale={handleQuickAddSale}
               funnelStages={funnelStages}
+              currentUser={currentUser}
             />
           );
         case 'pdv':
@@ -861,6 +905,7 @@ export default function App() {
                 onQuickAddLead={handleQuickAddLead}
                 onQuickAddSale={handleQuickAddSale}
                 funnelStages={funnelStages}
+                currentUser={currentUser}
               />
             )}
 

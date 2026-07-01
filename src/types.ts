@@ -35,6 +35,8 @@ export interface Sale {
   totalPrice: number;
   date: string;
   status: 'Pendente' | 'Pago' | 'Cancelado';
+  sellerId?: string;
+  sellerName?: string;
 }
 
 export interface Interaction {
@@ -50,7 +52,7 @@ export interface User {
   name: string;
   email: string;
   password?: string;
-  role: 'Acesso Total' | 'Apenas Leads' | 'Apenas Estoque';
+  role: 'Acesso Total' | 'Apenas Leads' | 'Apenas Estoque' | 'Vendedor';
   invitedBy?: string;
   createdAt: string;
   photoUrl?: string;

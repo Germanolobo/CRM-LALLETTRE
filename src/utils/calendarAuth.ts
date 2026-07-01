@@ -14,40 +14,71 @@ provider.setCustomParameters({
 });
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+let currentProfileId: string | null = null;
+
+export const setProfileUserId = (id: string | null) => {
+  currentProfileId = id;
+};
+
+export const getConnectedGoogleUser = () => {
+  if (!currentProfileId) return null;
+  const cachedUserStr = localStorage.getItem(`lallettre_google_user_${currentProfileId}`);
+  const token = localStorage.getItem(`lallettre_google_token_${currentProfileId}`);
+  if (token && cachedUserStr) {
+    try {
+      return JSON.parse(cachedUserStr);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
 
 // Initialize auth state listener.
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: { email: string; displayName?: string; photoURL?: string }, token: string) => void,
   onAuthFailure?: () => void
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
+    if (user && currentProfileId) {
+      const token = localStorage.getItem(`lallettre_google_token_${currentProfileId}`);
+      const cachedUser = getConnectedGoogleUser();
+      
+      if (token && cachedUser) {
+        if (onAuthSuccess) onAuthSuccess(cachedUser, token);
+        return;
       }
-    } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
     }
+    if (onAuthFailure) onAuthFailure();
   });
 };
 
-// Sign in with Google
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+// Sign in with Google with optional email validation
+export const googleSignIn = async (expectedEmail?: string): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
+    
+    if (expectedEmail && result.user.email?.toLowerCase() !== expectedEmail.toLowerCase()) {
+      await auth.signOut();
+      throw new Error(`O e-mail da conta Google (${result.user.email}) não corresponde ao e-mail do seu perfil no CRM (${expectedEmail}).`);
+    }
+
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
       throw new Error('Não foi possível obter o token de acesso do Google.');
     }
 
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
+    const token = credential.accessToken;
+    if (currentProfileId) {
+      localStorage.setItem(`lallettre_google_token_${currentProfileId}`, token);
+      localStorage.setItem(`lallettre_google_user_${currentProfileId}`, JSON.stringify({
+        email: result.user.email,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL
+      }));
+    }
+    return { user: result.user, accessToken: token };
   } catch (error: any) {
     console.error('Google Sign-in error:', error);
     throw error;
@@ -57,12 +88,18 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  return cachedAccessToken;
+  if (currentProfileId) {
+    return localStorage.getItem(`lallettre_google_token_${currentProfileId}`);
+  }
+  return null;
 };
 
 export const logoutGoogle = async () => {
   await auth.signOut();
-  cachedAccessToken = null;
+  if (currentProfileId) {
+    localStorage.removeItem(`lallettre_google_token_${currentProfileId}`);
+    localStorage.removeItem(`lallettre_google_user_${currentProfileId}`);
+  }
 };
 
 // Interface for event creation

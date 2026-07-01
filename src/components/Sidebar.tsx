@@ -47,14 +47,14 @@ export default function Sidebar({
     if (!currentUser) return [];
 
     const allItems = [
-      { id: 'dashboard', name: 'Painel Geral', icon: LayoutDashboard, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque'] },
-      { id: 'pdv', name: 'PDV (Frente de Loja)', icon: Store, roles: ['Acesso Total', 'Apenas Estoque'] },
+      { id: 'dashboard', name: 'Painel Geral', icon: LayoutDashboard, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque', 'Vendedor'] },
+      { id: 'pdv', name: 'PDV (Frente de Loja)', icon: Store, roles: ['Acesso Total', 'Apenas Estoque', 'Vendedor'] },
       { id: 'leads', name: 'Leads & Clientes', icon: Users, roles: ['Acesso Total', 'Apenas Leads'] },
       { id: 'stock', name: 'Controle de Estoque', icon: Package, roles: ['Acesso Total', 'Apenas Estoque'] },
       { id: 'sales', name: 'Registro de Vendas', icon: BadgePercent, roles: ['Acesso Total', 'Apenas Estoque'] },
       { id: 'interactions', name: 'Histórico de Contatos', icon: History, roles: ['Acesso Total', 'Apenas Leads'] },
       { id: 'team', name: 'Equipe & Acessos', icon: UserCheck, roles: ['Acesso Total'] },
-      { id: 'profile', name: 'Meu Perfil', icon: User, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque'] },
+      { id: 'profile', name: 'Meu Perfil', icon: User, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque', 'Vendedor'] },
     ];
 
     return allItems.filter(item => item.roles.includes(currentUser.role));
