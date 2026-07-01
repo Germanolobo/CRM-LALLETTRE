@@ -65,12 +65,14 @@ export default function Sidebar({
   return (
     <div className="w-[220px] shrink-0 bg-[#0A0A0A] border-r border-terracotta-500/20 flex flex-col h-screen sticky top-0" id="sidebar">
       {/* Brand Header */}
-      <div className="p-6 mb-4 flex flex-col justify-start border-b border-white/5 pb-5" id="sidebar-brand-header">
-        <Logo variant="sidebar" className="self-start" />
-        <p className="font-italiana text-[9px] tracking-[0.22em] text-[#DFBA73]/70 uppercase mt-2 self-start pl-1">
-          Maison de Parfum
-        </p>
-      </div>
+      <button
+        onClick={() => setCurrentTab('dashboard')}
+        className="p-6 mb-4 flex flex-col items-center justify-center border-b border-white/5 pb-5 hover:opacity-95 active:scale-97 transition-all duration-300 w-full cursor-pointer focus:outline-none group"
+        id="sidebar-brand-header"
+        title="Voltar para o Painel Geral"
+      >
+        <Logo variant="sidebar" className="group-hover:scale-102 transition-all duration-300" />
+      </button>
 
       {/* Navigation Menu */}
       <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
