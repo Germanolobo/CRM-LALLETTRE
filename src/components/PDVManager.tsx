@@ -20,11 +20,80 @@ import {
   Printer,
   ChevronRight,
   Package,
-  ArrowLeft
+  ArrowLeft,
+  Copy,
+  Settings,
+  Info,
+  CheckCircle
 } from 'lucide-react';
 import { Product, Lead, Sale } from '../types';
 import { db } from '../firebase';
 import { setDoc, doc } from 'firebase/firestore';
+
+// Helper to calculate standard CRC16-CCITT checksum for PIX
+function crc16(str: string): string {
+  let crc = 0xFFFF;
+  const polynomial = 0x1021;
+
+  for (let i = 0; i < str.length; i++) {
+    const b = str.charCodeAt(i);
+    for (let j = 0; j < 8; j++) {
+      const bit = ((b >> (7 - j)) & 1) === 1;
+      const c15 = ((crc >> 15) & 1) === 1;
+      crc <<= 1;
+      if (c15 !== bit) {
+        crc ^= polynomial;
+      }
+    }
+  }
+
+  crc &= 0xFFFF;
+  let hex = crc.toString(16).toUpperCase();
+  while (hex.length < 4) {
+    hex = '0' + hex;
+  }
+  return hex;
+}
+
+// Generates the official BR Code payload for static PIX payment
+function generatePixPayload(key: string, name: string, city: string, amount: number, txid: string = 'LALLETREPDV'): string {
+  const cleanKey = key.trim();
+  
+  // Normalize string to remove accents and special chars for safety in EMV
+  const removeAccents = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const cleanName = removeAccents(name).toUpperCase().replace(/[^A-Z0-9 ]/g, '').substring(0, 25) || 'LALLETRE';
+  const cleanCity = removeAccents(city).toUpperCase().replace(/[^A-Z0-9 ]/g, '').substring(0, 15) || 'SAO PAULO';
+  const cleanTxid = removeAccents(txid).toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 25) || '***';
+
+  const f = (id: string, val: string) => {
+    const len = val.length.toString().padStart(2, '0');
+    return `${id}${len}${val}`;
+  };
+
+  const gui = f('00', 'br.gov.bcb.pix');
+  const keyField = f('01', cleanKey);
+  const merchantAccount = f('26', `${gui}${keyField}`);
+
+  const mcc = f('52', '0000');
+  const currency = f('53', '986');
+  
+  // Format amount to exactly 2 decimal places with a dot separator
+  const amountField = f('54', amount.toFixed(2));
+
+  const country = f('58', 'BR');
+  const merchantName = f('59', cleanName);
+  const merchantCity = f('60', cleanCity);
+
+  const txidField = f('05', cleanTxid);
+  const additionalData = f('62', txidField);
+
+  // Combine everything before CRC
+  const payloadFormat = '000201';
+  const rawPayload = `${payloadFormat}${merchantAccount}${mcc}${currency}${amountField}${country}${merchantName}${merchantCity}${additionalData}6304`;
+
+  const checksum = crc16(rawPayload);
+  return `${rawPayload}${checksum}`;
+}
 
 interface PDVManagerProps {
   products: Product[];
@@ -71,6 +140,21 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
   // Transaction Process States
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // PIX Config States
+  const [pixKey, setPixKey] = useState(() => localStorage.getItem('lallettre_pix_key') || 'lallettre@gmail.com');
+  const [pixName, setPixName] = useState(() => localStorage.getItem('lallettre_pix_name') || 'LALLETRE MAISON');
+  const [pixCity, setPixCity] = useState(() => localStorage.getItem('lallettre_pix_city') || 'SAO PAULO');
+  
+  const [isConfiguringPix, setIsConfiguringPix] = useState(false);
+  const [tempPixKey, setTempPixKey] = useState(pixKey);
+  const [tempPixName, setTempPixName] = useState(pixName);
+  const [tempPixCity, setTempPixCity] = useState(pixCity);
+
+  // Awaiting PIX overlay
+  const [isAwaitingPix, setIsAwaitingPix] = useState(false);
+  const [copiedPix, setCopiedPix] = useState(false);
+
   const [completedTransaction, setCompletedTransaction] = useState<{
     saleIds: string[];
     clientName: string;
@@ -165,6 +249,29 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
     return Math.max(0, subtotal - discountAmount);
   }, [subtotal, discountAmount]);
 
+  // PIX Code generation
+  const pixPayload = useMemo(() => {
+    if (finalTotal <= 0) return '';
+    return generatePixPayload(pixKey, pixName, pixCity, finalTotal);
+  }, [pixKey, pixName, pixCity, finalTotal]);
+
+  const handleSavePixConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPixKey(tempPixKey);
+    setPixName(tempPixName);
+    setPixCity(tempPixCity);
+    localStorage.setItem('lallettre_pix_key', tempPixKey);
+    localStorage.setItem('lallettre_pix_name', tempPixName);
+    localStorage.setItem('lallettre_pix_city', tempPixCity);
+    setIsConfiguringPix(false);
+  };
+
+  const handleCopyPix = () => {
+    navigator.clipboard.writeText(pixPayload);
+    setCopiedPix(true);
+    setTimeout(() => setCopiedPix(false), 2000);
+  };
+
   // Finalize Transaction
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -256,8 +363,9 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
         date: new Date().toLocaleString('pt-BR')
       });
 
-      // Clear the working cart
+      // Clear the working states
       setCart([]);
+      setIsAwaitingPix(false);
     } catch (err: any) {
       console.error("Checkout failed:", err);
       setErrorMsg(err.message || 'Erro inesperado ao processar a venda.');
@@ -355,7 +463,7 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
           <div className="mt-6 flex gap-3">
             <button
               onClick={() => setCompletedTransaction(null)}
-              className="flex-1 py-2.5 bg-[#B35B48] hover:bg-[#c26a57] text-white rounded-lg text-xs font-semibold tracking-wider transition-colors cursor-pointer text-center"
+              className="flex-1 py-2.5 bg-[#B35B48] hover:bg-[#c26a57] text-white rounded-lg text-xs font-semibold tracking-wider transition-colors cursor-pointer text-center font-mono uppercase"
             >
               Nova Venda
             </button>
@@ -368,6 +476,206 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
               <span>Imprimir</span>
             </button>
           </div>
+        </div>
+      ) : isAwaitingPix ? (
+        /* INTERMEDIATE LIVE PIX PAYMENT SCREEN */
+        <div className="max-w-2xl mx-auto glass border border-[#B35B48]/20 rounded-3xl p-6 sm:p-8 relative overflow-hidden animate-fade-in" id="pix-terminal-screen">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-[#B35B48] animate-pulse" />
+
+          {/* Header */}
+          <div className="flex items-center gap-3 border-b border-white/5 pb-5">
+            <button
+              onClick={() => setIsAwaitingPix(false)}
+              className="p-2 hover:bg-white/5 rounded-xl transition-colors text-gray-400 hover:text-white cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div>
+              <span className="text-[10px] bg-[#B35B48]/10 text-[#B35B48] px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold border border-[#B35B48]/20">PIX Dinâmico</span>
+              <h3 className="font-serif text-lg text-white mt-1">Terminal de Pagamento Instantâneo</h3>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-6 items-start">
+            
+            {/* Left: QR Code and Action */}
+            <div className="md:col-span-5 flex flex-col items-center text-center space-y-4">
+              <div className="bg-white p-3 rounded-2xl shadow-xl border border-white/10 max-w-[210px] relative group overflow-hidden">
+                <img 
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(pixPayload)}`} 
+                  alt="QR Code PIX Lallettre" 
+                  className="w-44 h-44 object-contain"
+                />
+              </div>
+
+              <div className="font-mono text-center">
+                <span className="text-[10px] text-gray-500 uppercase block">Valor total a pagar:</span>
+                <span className="text-xl font-bold text-[#DFBA73] tracking-tight">{formatCurrency(finalTotal)}</span>
+              </div>
+            </div>
+
+            {/* Right: Instructions & Config */}
+            <div className="md:col-span-7 space-y-5">
+              
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-gray-300 font-mono uppercase tracking-wider">Como o cliente deve pagar:</h4>
+                <ol className="text-xs text-gray-400 space-y-1.5 list-decimal list-inside pl-1 leading-relaxed">
+                  <li>Abra o aplicativo de qualquer instituição financeira.</li>
+                  <li>Escolha a opção de pagar com <strong className="text-white">PIX QR Code</strong> ou Copia e Cola.</li>
+                  <li>Aponte a câmera para o código ou copie a chave abaixo.</li>
+                  <li>Confirme o recebimento do valor na sua conta antes de liberar a mercadoria.</li>
+                </ol>
+              </div>
+
+              {/* PIX Copy & Paste box */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-mono text-gray-500 uppercase">Código PIX Copia e Cola:</span>
+                  <button 
+                    onClick={handleCopyPix}
+                    className="text-[10px] font-mono text-[#B35B48] hover:text-[#c26a57] flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Copy className="h-3 w-3" />
+                    <span>{copiedPix ? 'Copiado!' : 'Copiar Código'}</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <textarea
+                    readOnly
+                    value={pixPayload}
+                    className="w-full h-16 bg-[#080808] border border-white/5 rounded-xl p-3 text-[10px] text-gray-400 font-mono resize-none focus:outline-none"
+                  />
+                  {copiedPix && (
+                    <div className="absolute inset-0 bg-brand-black/90 flex items-center justify-center gap-2 rounded-xl border border-emerald-900/30 text-emerald-400 text-xs font-mono animate-scale-up">
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Código copiado com sucesso!</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bank Account Config Option */}
+              <div className="space-y-3.5 pt-2">
+                {isConfiguringPix ? (
+                  <form onSubmit={handleSavePixConfig} className="bg-white/[0.01] border border-white/5 p-4 rounded-xl space-y-3 animate-scale-up">
+                    <span className="text-[10px] uppercase font-mono tracking-wider text-[#DFBA73] font-bold block">
+                      Configurar Dados de Destino
+                    </span>
+
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="text-[9px] text-gray-500 font-mono block mb-1">CHAVE PIX (Email, Celular, CPF ou Aleatória)</label>
+                        <input
+                          type="text"
+                          value={tempPixKey}
+                          onChange={(e) => setTempPixKey(e.target.value)}
+                          placeholder="Ex: lallettre@gmail.com"
+                          className="w-full bg-black/60 border border-white/5 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-terracotta-500/50"
+                          required
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[9px] text-gray-500 font-mono block mb-1">TITULAR (Sem acentos)</label>
+                          <input
+                            type="text"
+                            value={tempPixName}
+                            onChange={(e) => setTempPixName(e.target.value)}
+                            placeholder="Ex: LALLETRE"
+                            className="w-full bg-black/60 border border-white/5 rounded-lg p-2 text-xs text-white focus:outline-none"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-gray-500 font-mono block mb-1">CIDADE (Sem acentos)</label>
+                          <input
+                            type="text"
+                            value={tempPixCity}
+                            onChange={(e) => setTempPixCity(e.target.value)}
+                            placeholder="Ex: SAO PAULO"
+                            className="w-full bg-black/60 border border-white/5 rounded-lg p-2 text-xs text-white focus:outline-none"
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-1.5">
+                      <button
+                        type="submit"
+                        className="flex-1 py-2 bg-[#B35B48] hover:bg-[#c26a57] text-white rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
+                      >
+                        Salvar e Atualizar QR Code
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTempPixKey(pixKey);
+                          setTempPixName(pixName);
+                          setTempPixCity(pixCity);
+                          setIsConfiguringPix(false);
+                        }}
+                        className="px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="flex items-center justify-between bg-white/[0.01] border border-white/5 p-3 rounded-xl">
+                    <div className="text-left font-mono">
+                      <span className="text-[9px] text-gray-500 block uppercase">Conta de Recebimento ativa:</span>
+                      <p className="text-xs text-white font-medium truncate max-w-[220px]">{pixKey}</p>
+                      <p className="text-[9px] text-gray-400 mt-0.5">{pixName} • {pixCity}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTempPixKey(pixKey);
+                        setTempPixName(pixName);
+                        setTempPixCity(pixCity);
+                        setIsConfiguringPix(true);
+                      }}
+                      className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg text-[9px] font-mono uppercase tracking-wider text-gray-300 hover:text-white transition-all cursor-pointer flex items-center gap-1"
+                      title="Alterar Conta Bancária"
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                      <span>Alterar</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+          </div>
+
+          <div className="border-t border-white/5 mt-8 pt-6 flex flex-col sm:flex-row gap-3 justify-end">
+            <button
+              onClick={() => setIsAwaitingPix(false)}
+              className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-semibold text-gray-300 transition-colors cursor-pointer text-center order-2 sm:order-1"
+            >
+              Cancelar e Voltar
+            </button>
+            <button
+              onClick={handleCheckout}
+              disabled={isProcessing}
+              className="flex-1 sm:flex-none px-6 py-2.5 bg-[#B35B48] hover:bg-[#c26a57] text-white rounded-xl text-xs font-semibold tracking-wider transition-colors cursor-pointer text-center flex items-center justify-center gap-2 order-1 sm:order-2"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Confirmando...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
+                  <span>Confirmar Recebimento do PIX</span>
+                </>
+              )}
+            </button>
+          </div>
+
         </div>
       ) : (
         /* PRIMARY PDV INTERFACE */
@@ -779,7 +1087,13 @@ export default function PDVManager({ products, leads, onAddSale, onAddLead }: PD
               {/* Checkout CTA */}
               <button
                 type="button"
-                onClick={handleCheckout}
+                onClick={() => {
+                  if (paymentMethod === 'PIX') {
+                    setIsAwaitingPix(true);
+                  } else {
+                    handleCheckout();
+                  }
+                }}
                 disabled={cart.length === 0 || isProcessing}
                 className={`w-full py-3 rounded-xl font-semibold tracking-wider transition-all duration-300 text-xs flex items-center justify-center gap-2 cursor-pointer ${
                   cart.length === 0 
