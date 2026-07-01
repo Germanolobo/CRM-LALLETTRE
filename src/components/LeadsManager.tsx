@@ -127,7 +127,12 @@ export default function LeadsManager({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Modal right column active tab
-  const [activeModalTab, setActiveModalTab] = useState<'history' | 'calendar'>('history');
+  const [activeModalTab, setActiveModalTab] = useState<'history' | 'calendar' | 'whatsapp'>('history');
+
+  // WhatsApp Integration State
+  const [whatsappMessage, setWhatsappMessage] = useState('');
+  const [whatsappTemplate, setWhatsappTemplate] = useState('');
+  const [autoLogWhatsapp, setAutoLogWhatsapp] = useState(true);
 
   // Google Calendar scheduling states
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
@@ -147,6 +152,51 @@ export default function LeadsManager({
   const [isScheduling, setIsScheduling] = useState(false);
   const [schedulingSuccess, setSchedulingSuccess] = useState<string | null>(null);
   const [schedulingError, setSchedulingError] = useState<string | null>(null);
+
+  const getWhatsappTemplates = (lead: Lead) => {
+    const nome = lead.name.split(' ')[0] || lead.name;
+    const interesse = lead.interestSize || 'fragrâncias';
+    return [
+      {
+        id: 'intro',
+        label: 'Apresentação (Intro)',
+        text: `Olá, ${nome}! Tudo bem? 🌸 Vi que você tem interesse em conhecer as nossas fragrâncias Lalletre Maison (interesse em frascos de ${interesse}). Gostaria de receber detalhes dos nossos perfumes ou agendar uma demonstração exclusiva com um de nossos consultores?`
+      },
+      {
+        id: 'followup',
+        label: 'Acompanhamento (Follow-up)',
+        text: `Oi, ${nome}! Passando para saber se você conseguiu ver as informações sobre os perfumes Lalletre Maison que conversamos. Ficou alguma dúvida sobre as fragrâncias ou tamanhos? ✨`
+      },
+      {
+        id: 'checkout',
+        label: 'Fechamento de Venda',
+        text: `Olá, ${nome}! Conseguimos separar o seu perfume de ${interesse} da Lalletre Maison! 🛍️ Gostaria que eu gerasse o link de pagamento ou a chave PIX para fecharmos a entrega?`
+      },
+      {
+        id: 'feedback',
+        label: 'Pós-Venda (Feedback)',
+        text: `Olá, ${nome}! Como está? Espero que esteja amando o seu novo perfume Lalletre! 💖 O que achou do aroma e da fixação na pele? Seu feedback é muito importante para nós!`
+      }
+    ];
+  };
+
+  // Synchronize WhatsApp template message when lead or template changes
+  useEffect(() => {
+    if (selectedLead) {
+      const templates = getWhatsappTemplates(selectedLead);
+      const matched = templates.find(t => t.id === whatsappTemplate);
+      // Only overwrite if template has changed and is set, or if message is empty
+      if (whatsappTemplate) {
+        setWhatsappMessage(matched ? matched.text : '');
+      } else if (!whatsappMessage) {
+        setWhatsappMessage(templates[0].text);
+        setWhatsappTemplate('intro');
+      }
+    } else {
+      setWhatsappTemplate('');
+      setWhatsappMessage('');
+    }
+  }, [selectedLead, whatsappTemplate]);
 
   // Load upcoming events when selectedLead changes and Google Calendar is connected
   useEffect(() => {
@@ -435,6 +485,35 @@ export default function LeadsManager({
       console.error(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSendWhatsapp = async (method: 'web' | 'api') => {
+    if (!selectedLead || !selectedLead.phone) return;
+    
+    const cleanPhone = selectedLead.phone.replace(/\D/g, '');
+    const formattedPhone = (cleanPhone.length <= 11 && !cleanPhone.startsWith('55')) ? '55' + cleanPhone : cleanPhone;
+    
+    const baseUrl = method === 'web' 
+      ? 'https://web.whatsapp.com/send' 
+      : 'https://api.whatsapp.com/send';
+      
+    const url = `${baseUrl}?phone=${formattedPhone}&text=${encodeURIComponent(whatsappMessage)}`;
+    window.open(url, '_blank');
+
+    if (autoLogWhatsapp) {
+      try {
+        setIsSubmitting(true);
+        await onAddInteraction({
+          clientId: selectedLead.id,
+          type: 'Mensagem',
+          content: `[WhatsApp Direct] Mensagem enviada:\n\n"${whatsappMessage}"`
+        });
+      } catch (err) {
+        console.error("Error auto logging WhatsApp message:", err);
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -1365,6 +1444,18 @@ export default function LeadsManager({
                     <span>Google Agenda</span>
                     {googleUser && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>}
                   </button>
+                  <button
+                    onClick={() => setActiveModalTab('whatsapp')}
+                    className={`pb-2 text-xs font-mono font-bold uppercase tracking-wider transition-all border-b-2 -mb-2.5 flex items-center gap-1.5 cursor-pointer ${
+                      activeModalTab === 'whatsapp'
+                        ? 'text-white border-[#B35B48]'
+                        : 'text-gray-500 hover:text-gray-300 border-transparent'
+                    }`}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>WhatsApp Direct</span>
+                    {selectedLead.phone && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>}
+                  </button>
                 </div>
 
                 {activeModalTab === 'history' ? (
@@ -1438,7 +1529,7 @@ export default function LeadsManager({
                       </div>
                     </form>
                   </>
-                ) : (
+                ) : activeModalTab === 'calendar' ? (
                   <div className="space-y-5 overflow-y-auto max-h-[420px] pr-1 flex-1">
                     {!googleUser ? (
                       <div className="p-8 text-center bg-brand-black/40 border border-white/5 rounded-xl space-y-4 my-4">
@@ -1639,6 +1730,134 @@ export default function LeadsManager({
 
                         </div>
 
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* WhatsApp Tab Content */
+                  <div className="space-y-5 flex-1 flex flex-col justify-between">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-mono font-bold text-[#B35B48] uppercase tracking-wider">
+                          Central de Mensagens WhatsApp
+                        </h4>
+                        {selectedLead.phone ? (
+                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900/20 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Número disponível
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono text-red-400 bg-red-950/30 px-2 py-0.5 rounded border border-red-900/20 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            Falta telefone
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-gray-400 leading-relaxed">
+                        Envie mensagens instantâneas e personalizadas para os seus leads. Escolha um dos modelos profissionais abaixo ou escreva sua própria mensagem para agilizar o contato.
+                      </p>
+
+                      {!selectedLead.phone ? (
+                        <div className="p-6 text-center bg-red-950/10 border border-red-900/20 rounded-xl space-y-2">
+                          <AlertCircle className="h-6 w-6 text-red-400 mx-auto" />
+                          <h5 className="text-xs font-bold text-white uppercase font-mono">Telefone Não Cadastrado</h5>
+                          <p className="text-[11px] text-gray-400 max-w-md mx-auto">
+                            Para iniciar uma conversa via WhatsApp, edite este lead e adicione um número de telefone válido.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {/* Template Selection */}
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">
+                              Modelos de Mensagem Rápidos (Lalletre Maison)
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {getWhatsappTemplates(selectedLead).map((tpl) => (
+                                <button
+                                  key={tpl.id}
+                                  type="button"
+                                  onClick={() => setWhatsappTemplate(tpl.id)}
+                                  className={`p-2.5 rounded-lg border text-[11px] text-left transition-all cursor-pointer flex flex-col justify-between h-14 ${
+                                    whatsappTemplate === tpl.id
+                                      ? 'bg-gradient-to-br from-terracotta-900/40 to-terracotta-950/40 border-[#B35B48] text-white font-bold'
+                                      : 'bg-brand-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-brand-black/60'
+                                  }`}
+                                >
+                                  <span className="block font-semibold truncate">{tpl.label}</span>
+                                  <span className="block text-[9px] text-gray-500 font-normal truncate max-w-full">
+                                    {tpl.text}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Message Editor */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                                Conteúdo da Mensagem (Editável)
+                              </label>
+                              <span className="text-[9px] text-gray-500 font-mono">
+                                {whatsappMessage.length} caracteres
+                              </span>
+                            </div>
+                            <textarea
+                              rows={5}
+                              value={whatsappMessage}
+                              onChange={(e) => {
+                                setWhatsappMessage(e.target.value);
+                                setWhatsappTemplate('');
+                              }}
+                              placeholder="Escreva sua mensagem aqui..."
+                              className="w-full bg-brand-black border border-white/10 focus:border-[#B35B48] rounded px-3 py-2.5 text-xs text-gray-200 outline-none transition-all duration-300 resize-none font-sans leading-relaxed"
+                            />
+                          </div>
+
+                          {/* Auto-log checkbox */}
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id="auto-log-whatsapp"
+                              checked={autoLogWhatsapp}
+                              onChange={(e) => setAutoLogWhatsapp(e.target.checked)}
+                              className="rounded border-white/10 bg-brand-black text-[#B35B48] focus:ring-[#B35B48] h-3.5 w-3.5 cursor-pointer"
+                            />
+                            <label htmlFor="auto-log-whatsapp" className="text-[11px] text-gray-400 cursor-pointer select-none">
+                              Registrar envio automaticamente no Histórico do CRM como 'Mensagem'
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedLead.phone && (
+                      <div className="pt-4 border-t border-terracotta-950/40 space-y-2.5">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleSendWhatsapp('web')}
+                            disabled={isSubmitting || !whatsappMessage.trim()}
+                            className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold text-xs rounded-lg transition-all cursor-pointer shadow-md inline-flex items-center justify-center gap-2"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                            <span>Enviar via WhatsApp Web</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSendWhatsapp('api')}
+                            disabled={isSubmitting || !whatsappMessage.trim()}
+                            className="flex-1 py-2.5 bg-brand-black border border-white/10 hover:border-white/20 disabled:opacity-40 text-white font-semibold text-xs rounded-lg transition-all cursor-pointer shadow-md inline-flex items-center justify-center gap-2"
+                          >
+                            <Phone className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>Enviar via Celular/Aplicativo</span>
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-gray-500 font-mono text-center">
+                          Nota: Devido a políticas de segurança da Meta (WhatsApp), o WhatsApp Web não pode ser espelhado diretamente em uma tela interna. Os botões acima abrirão o WhatsApp com os campos preenchidos de forma integrada e segura.
+                        </p>
                       </div>
                     )}
                   </div>
