@@ -17,13 +17,52 @@ import InteractionsLog from './components/InteractionsLog';
 import Login from './components/Login';
 import TeamManager from './components/TeamManager';
 import UserProfile from './components/UserProfile';
-import { Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { 
+  Sparkles, 
+  Loader2, 
+  AlertCircle, 
+  LayoutDashboard, 
+  Store, 
+  Users, 
+  Package, 
+  BadgePercent, 
+  History, 
+  UserCheck, 
+  User as UserIcon, 
+  Menu, 
+  MoreHorizontal, 
+  Battery, 
+  Wifi, 
+  Signal, 
+  Smartphone, 
+  Laptop,
+  ChevronLeft,
+  X,
+  AlertTriangle,
+  Calendar,
+  LogOut,
+  Bell
+} from 'lucide-react';
 import { initAuth, googleSignIn, logoutGoogle } from './utils/calendarAuth';
 import { User as FirebaseUser } from 'firebase/auth';
+import Logo from './components/Logo';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Auto-detect mobile screen size (standard tablet/phone breakpoint < 1024px)
+  const [isMobileScreen, setIsMobileScreen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobileScreen(window.innerWidth < 1024);
+    };
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
 
   // Authentication & Access Control States
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -403,12 +442,394 @@ export default function App() {
     await setDoc(doc(db, 'settings', 'funnel'), { stages: newStages });
   };
 
+  const getMobilePrimaryTabs = () => {
+    if (!currentUser) return [];
+    
+    const role = currentUser.role;
+    if (role === 'Apenas Leads') {
+      return [
+        { id: 'dashboard', label: 'Painel', icon: LayoutDashboard },
+        { id: 'leads', label: 'Leads', icon: Users },
+        { id: 'interactions', label: 'Histórico', icon: History },
+        { id: 'profile', label: 'Perfil', icon: UserIcon },
+      ];
+    } else if (role === 'Apenas Estoque') {
+      return [
+        { id: 'dashboard', label: 'Painel', icon: LayoutDashboard },
+        { id: 'pdv', label: 'PDV', icon: Store },
+        { id: 'stock', label: 'Estoque', icon: Package },
+        { id: 'sales', label: 'Vendas', icon: BadgePercent },
+      ];
+    } else {
+      // Full Access
+      return [
+        { id: 'dashboard', label: 'Painel', icon: LayoutDashboard },
+        { id: 'pdv', label: 'PDV', icon: Store },
+        { id: 'leads', label: 'Leads', icon: Users },
+        { id: 'stock', label: 'Estoque', icon: Package },
+      ];
+    }
+  };
+
   if (!currentUser) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // --- MOBILE VIEWS (CELLULAR DETECTED) ---
+  if (isMobileScreen) {
+    const mobilePrimaryTabs = getMobilePrimaryTabs();
+    const lowStockItems = products.filter(p => p.stock < 5 && p.stock > 0);
+    const outOfStockItems = products.filter(p => p.stock === 0);
+
+    const getSecondaryMenuItems = () => {
+      const allItems = [
+        { id: 'sales', name: 'Registro de Vendas', icon: BadgePercent, roles: ['Acesso Total', 'Apenas Estoque'] },
+        { id: 'interactions', name: 'Histórico de Contatos', icon: History, roles: ['Acesso Total', 'Apenas Leads'] },
+        { id: 'team', name: 'Equipe & Acessos', icon: UserCheck, roles: ['Acesso Total'] },
+        { id: 'profile', name: 'Meu Perfil', icon: UserIcon, roles: ['Acesso Total', 'Apenas Leads', 'Apenas Estoque'] },
+      ];
+      return allItems.filter(item => {
+        const isPrimary = mobilePrimaryTabs.some(pt => pt.id === item.id);
+        const isAllowed = item.roles.includes(currentUser.role);
+        return !isPrimary && isAllowed;
+      });
+    };
+
+    const secondaryMenuItems = getSecondaryMenuItems();
+
+    const renderActiveTab = () => {
+      if (isLoading) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-3 py-20" id="app-loading-mobile">
+            <Loader2 className="h-8 w-8 text-terracotta-500 animate-spin" />
+            <p className="text-[10px] font-mono text-gray-500 tracking-wider uppercase">Sincronizando Banco de Dados Lalletre...</p>
+          </div>
+        );
+      }
+      switch (currentTab) {
+        case 'dashboard':
+          return (
+            <Dashboard 
+              leads={leads} 
+              products={products} 
+              sales={sales} 
+              onNavigate={setCurrentTab} 
+              onQuickAddLead={handleQuickAddLead}
+              onQuickAddSale={handleQuickAddSale}
+              funnelStages={funnelStages}
+            />
+          );
+        case 'pdv':
+          return (
+            <PDVManager 
+              products={products}
+              leads={leads}
+              onAddSale={handleAddSale}
+              onAddLead={handleAddLead}
+            />
+          );
+        case 'leads':
+          return (
+            <LeadsManager 
+              leads={leads}
+              products={products}
+              interactions={interactions}
+              onAddLead={handleAddLead}
+              onUpdateLeadStatus={handleUpdateLeadStatus}
+              onDeleteLead={handleDeleteLead}
+              onAddInteraction={handleAddInteraction}
+              onOpenSaleModalForLead={handleOpenSaleModalForLead}
+              funnelStages={funnelStages}
+              onUpdateFunnelStages={handleUpdateFunnelStages}
+              targetLeadForDetails={targetLeadForDetails}
+              onClearTargetLeadDetails={() => setTargetLeadForDetails(null)}
+              googleUser={googleUser}
+              onGoogleLogin={handleGoogleLogin}
+              onGoogleLogout={handleGoogleLogout}
+            />
+          );
+        case 'stock':
+          return (
+            <StockManager 
+              products={products}
+              onAddProduct={handleAddProduct}
+              onUpdateStock={handleUpdateStock}
+              onDeleteProduct={handleDeleteProduct}
+              onUpdateProduct={handleUpdateProduct}
+            />
+          );
+        case 'sales':
+          return (
+            <SalesManager 
+              sales={sales}
+              leads={leads}
+              products={products}
+              onAddSale={handleAddSale}
+              preselectedLeadId={preselectedLeadId}
+              onClearPreselectedLead={() => setPreselectedLeadId(undefined)}
+              isAddSaleOpenDirectly={isAddSaleOpenDirectly}
+              setIsAddSaleOpenDirectly={setIsAddSaleOpenDirectly}
+            />
+          );
+        case 'interactions':
+          return (
+            <InteractionsLog 
+              interactions={interactions}
+              leads={leads}
+              onOpenLeadDetails={handleOpenLeadDetails}
+            />
+          );
+        case 'team':
+          return (
+            <TeamManager 
+              currentUser={currentUser}
+            />
+          );
+        case 'profile':
+          return (
+            <UserProfile 
+              currentUser={currentUser}
+              onUpdateCurrentUser={setCurrentUser}
+            />
+          );
+        default:
+          return null;
+      }
+    };
+
+    const handleMobileTabSelect = (tabId: string) => {
+      setCurrentTab(tabId);
+      setIsMoreMenuOpen(false);
+    };
+
+    return (
+      <div className="min-h-screen w-full bg-brand-black text-gray-100 flex flex-col font-sans antialiased relative overflow-hidden animate-fade-in" id="mobile-app-wrapper">
+        
+        {/* App Header Bar (Within Cellular Viewport) */}
+        <header className="w-full shrink-0 h-14 bg-[#0A0A0A] border-b border-white/5 flex items-center justify-between px-4 z-40 shadow-sm" id="mobile-app-header">
+            {/* Left side actions (Details back button OR menu avatar) */}
+            <div className="flex items-center">
+              {currentTab === 'leads' && targetLeadForDetails ? (
+                <button
+                  onClick={() => setTargetLeadForDetails(null)}
+                  className="flex items-center gap-1 text-xs font-medium text-terracotta-400 hover:text-white transition-colors cursor-pointer py-1.5"
+                  id="mobile-back-to-list"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span>Voltar</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {currentUser.photoUrl ? (
+                    <img 
+                      src={currentUser.photoUrl} 
+                      alt={currentUser.name} 
+                      className="h-7 w-7 rounded-full object-cover border border-[#DFBA73]/30 cursor-pointer"
+                      onClick={() => handleMobileTabSelect('profile')}
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div 
+                      className="h-7 w-7 rounded-full bg-[#B35B48] flex items-center justify-center font-bold text-xs text-white uppercase cursor-pointer"
+                      onClick={() => handleMobileTabSelect('profile')}
+                    >
+                      {currentUser.name.substring(0, 2)}
+                    </div>
+                  )}
+                  <span className="text-[10px] text-gray-400 leading-none hidden sm:block truncate max-w-[60px] font-mono uppercase tracking-wider">
+                    {currentUser.role.split(' ')[0]}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Center Brand Logo */}
+            <div className="flex items-center justify-center">
+              <Logo variant="sidebar" className="h-8 max-h-8 scale-90" />
+            </div>
+
+            {/* Right side actions */}
+            <div className="flex items-center gap-2.5">
+              <button 
+                onClick={() => setIsMoreMenuOpen(true)}
+                className="relative p-1 text-gray-400 hover:text-[#DFBA73] transition-colors focus:outline-none cursor-pointer"
+                title="Google Agenda & Resumo do Estoque"
+                id="mobile-status-summary-trigger"
+              >
+                <div className={`w-2 h-2 rounded-full absolute top-0.5 right-0.5 ${googleUser ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></div>
+                <Bell className="h-4 w-4" />
+              </button>
+            </div>
+          </header>
+
+          {/* Main Content Area inside Simulator */}
+          <main className="flex-1 w-full overflow-y-auto bg-brand-black text-gray-100 relative pb-20 scrollbar-none" id="mobile-app-content">
+            {renderActiveTab()}
+          </main>
+
+          {/* Slide-up bottom sheet drawer for "Mais" (More) Menu */}
+          {isMoreMenuOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 transition-opacity duration-300 flex flex-col justify-end" id="more-drawer-overlay">
+              <div className="flex-1" onClick={() => setIsMoreMenuOpen(false)}></div>
+              
+              <div className="bg-[#0D0C0B] border-t border-[#DFBA73]/20 rounded-t-[32px] p-6 max-h-[85%] overflow-y-auto flex flex-col gap-6" id="more-drawer-panel">
+                
+                <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-mono text-[#B35B48] uppercase tracking-widest font-semibold">Maison Lallettre</span>
+                    <h3 className="font-serif text-sm font-bold text-[#DFBA73]">Mais Recursos & Ajustes</h3>
+                  </div>
+                  <button 
+                    onClick={() => setIsMoreMenuOpen(false)}
+                    className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all cursor-pointer"
+                    id="close-drawer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {secondaryMenuItems.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider font-mono">Recursos do App</div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {secondaryMenuItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = currentTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => handleMobileTabSelect(item.id)}
+                            className={`flex flex-col items-start gap-2 p-3.5 rounded-xl border text-left transition-all duration-300 cursor-pointer ${
+                              isActive 
+                                ? 'bg-[#B35B48]/10 border-[#B35B48]/40 text-[#B35B48]' 
+                                : 'bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/[0.04] hover:border-white/10'
+                            }`}
+                          >
+                            <Icon className="h-5 w-5 text-[#DFBA73]" />
+                            <span className="text-xs font-medium">{item.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {currentUser && (currentUser.role === 'Acesso Total' || currentUser.role === 'Apenas Estoque') && (
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5" id="drawer-stock-badge">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Package className="h-4 w-4 text-terracotta-500" />
+                      <span className="text-xs font-semibold text-gray-300">Status do Estoque</span>
+                    </div>
+                    {outOfStockItems.length > 0 || lowStockItems.length > 0 ? (
+                      <div className="space-y-1">
+                        {outOfStockItems.length > 0 && (
+                          <div className="text-xs text-red-400 font-mono flex items-center gap-1.5">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            <span>{outOfStockItems.length} {outOfStockItems.length === 1 ? 'item esgotado' : 'itens esgotados'}!</span>
+                          </div>
+                        )}
+                        {lowStockItems.length > 0 && (
+                          <div className="text-xs text-amber-500 font-mono flex items-center gap-1.5">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            <span>{lowStockItems.length} {lowStockItems.length === 1 ? 'estoque baixo' : 'estoques baixos'}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-emerald-500 font-mono flex items-center gap-1.5">
+                        <span>✓ Tudo normalizado no estoque</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="flex items-center gap-1.5 text-gray-300">
+                      <Calendar className="h-4 w-4 text-terracotta-400" />
+                      <span>Google Agenda</span>
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono ${googleUser ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-gray-800 text-gray-400'}`}>
+                      {googleUser ? 'Conectado' : 'Inativo'}
+                    </span>
+                  </div>
+                  {googleUser ? (
+                    <div className="space-y-1 bg-black/20 p-2.5 rounded-lg border border-white/5">
+                      <p className="text-xs text-gray-300 font-mono truncate">
+                        {googleUser.displayName || googleUser.email}
+                      </p>
+                      <button
+                        onClick={handleGoogleLogout}
+                        className="text-[10px] font-mono text-[#B35B48] hover:text-[#9c4c3b] transition-all cursor-pointer mt-1 block"
+                      >
+                        Desconectar Agenda
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleGoogleLogin}
+                      className="w-full py-2.5 px-3 bg-[#B35B48]/10 hover:bg-[#B35B48]/20 border border-[#B35B48]/20 rounded-xl text-xs font-medium text-center text-gray-300 hover:text-white transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>Conectar Conta Google</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2 border-t border-white/5 pt-4">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center justify-between p-3.5 bg-red-950/10 hover:bg-red-950/20 border border-red-900/15 rounded-xl text-xs text-red-400 hover:text-red-300 transition-all cursor-pointer"
+                    id="mobile-logout-btn"
+                  >
+                    <div className="flex items-center gap-2">
+                      <LogOut className="h-4 w-4" />
+                      <span>Sair do Sistema</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-gray-600">Sessão</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Fixed Mobile Bottom Tab Bar Navigation */}
+          <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#0A0A0A]/95 border-t border-white/5 backdrop-blur px-2 flex items-center justify-around z-40 pb-2" id="mobile-app-tabbar">
+            {mobilePrimaryTabs.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentTab === item.id && !isMoreMenuOpen;
+              return (
+                <button
+                  key={item.id}
+                  id={`mobile-tab-${item.id}`}
+                  onClick={() => handleMobileTabSelect(item.id)}
+                  className="flex flex-col items-center justify-center gap-1 py-1 w-14 transition-all duration-300 focus:outline-none cursor-pointer"
+                >
+                  <Icon className={`h-5 w-5 transition-transform duration-300 ${isActive ? 'text-[#B35B48] scale-110' : 'text-gray-400 hover:text-white'}`} />
+                  <span className={`text-[9px] font-medium transition-colors ${isActive ? 'text-[#B35B48]' : 'text-gray-500 hover:text-gray-300'}`}>
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+            
+            <button
+              onClick={() => setIsMoreMenuOpen(true)}
+              className="flex flex-col items-center justify-center gap-1 py-1 w-14 transition-all duration-300 focus:outline-none cursor-pointer"
+              id="mobile-tab-more"
+            >
+              <MoreHorizontal className={`h-5 w-5 transition-transform duration-300 ${isMoreMenuOpen ? 'text-[#B35B48] scale-110' : 'text-gray-400 hover:text-white'}`} />
+              <span className={`text-[9px] font-medium transition-colors ${isMoreMenuOpen ? 'text-[#B35B48]' : 'text-gray-500 hover:text-gray-300'}`}>
+                Mais
+              </span>
+            </button>
+          </nav>
+        </div>
+      );
+    }
+
+  // --- COMPATIBLE DESKTOP/WIDE VIEW (ORIGINAL FULLSCREEN LAYOUT) ---
   return (
-    <div className="flex h-screen w-full bg-brand-black overflow-hidden" id="app-root">
+    <div className="flex h-screen w-full bg-brand-black overflow-hidden relative" id="app-root">
       
       {/* Sidebar */}
       <Sidebar 
